@@ -27,9 +27,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +44,6 @@ import java.io.File
 import kotlin.math.min
 import kotlin.math.sin
 
-// Paleta de colores JEDL
 val Ink = ComposeColor(0xFF0B0C10)
 val Panel = ComposeColor(0xFF14151A)
 val Gold = ComposeColor(0xFFF5B841)
@@ -55,11 +54,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var poseDetector: PoseDetector
     private var photo: Bitmap? = null
     private var joints: List<PointF> = emptyList()
+    
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
     
-    // Estados para la interfaz
+    // Estados de Interfaz
     private var statusMsg by mutableStateOf("Listo · Elegí una foto")
+    private var textOverlay by mutableStateOf("") // Nuevo estado para el Texto
     private var isPlaying by mutableStateOf(false)
     private var showExportBtn by mutableStateOf(false)
 
@@ -76,7 +77,7 @@ class MainActivity : ComponentActivity() {
                 Box(modifier = Modifier.fillMaxSize().background(Ink)) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         
-                        // 1. Barra Superior (Header)
+                        // Barra Superior
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 40.dp, start = 16.dp, end = 16.dp, bottom = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // 2. Escenario (SurfaceView)
+                        // Escenario (SurfaceView)
                         Box(
                             modifier = Modifier.weight(1f).padding(16.dp).border(1.dp, Panel, RoundedCornerShape(12.dp)).background(ComposeColor.Black, RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
@@ -118,33 +119,51 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxSize()
                             )
                             
-                            // Mensaje central
                             if (photo == null) {
                                 Text("Toca el botón '+' para cargar una foto", color = ComposeColor.Gray, fontSize = 14.sp)
                             }
                         }
 
-                        // 3. Mensaje de Estado
+                        // Mensaje de Estado
                         Text(
                             text = statusMsg,
                             color = ComposeColor.White,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                             fontSize = 12.sp
                         )
 
-                        // 4. Barra de Herramientas (Fake CapCut style)
+                        // Panel de Texto (Aparece cuando hay foto)
+                        if (photo != null) {
+                            OutlinedTextField(
+                                value = textOverlay,
+                                onValueChange = { 
+                                    textOverlay = it
+                                    drawPreview() 
+                                },
+                                label = { Text("Escribe un subtítulo...", color = TextGray) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Gold,
+                                    unfocusedBorderColor = Panel,
+                                    focusedTextColor = ComposeColor.White,
+                                    unfocusedTextColor = ComposeColor.White
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+
+                        // Barra de Herramientas
                         Row(
                             modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             ToolItem("Fondo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
-                            ToolItem("Texto") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe en el cuadro de arriba", Toast.LENGTH_SHORT).show() }
                             ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                             ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
 
-                        // 5. Línea de Tiempo y Play
+                        // Línea de tiempo y Play
                         Row(
                             modifier = Modifier.fillMaxWidth().background(Ink).padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -164,12 +183,10 @@ class MainActivity : ComponentActivity() {
                                 Text("0:05", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp))
                             }
                         }
-                        
-                        // Espacio para el botón de agregar (flotante)
                         Spacer(modifier = Modifier.height(20.dp))
                     }
 
-                    // Botón flotante para agregar foto rápido
+                    // Botón flotante
                     FloatingActionButton(
                         onClick = { pickLauncher.launch("image/*") },
                         containerColor = Gold,
@@ -200,7 +217,7 @@ class MainActivity : ComponentActivity() {
             val detected = try { poseDetector.detectJoints(bitmap) } catch (e: Exception) { emptyList() }
             runOnUiThread {
                 photo = bitmap; joints = detected; animProgress = 0f
-                statusMsg = if (detected.isEmpty()) "Foto cargada · 0 juntas" else "Foto cargada · ${detected.size} juntas detectadas"
+                statusMsg = "Foto cargada · ${detected.size} juntas detectadas"
                 showExportBtn = true
                 drawPreview()
             }
@@ -209,9 +226,10 @@ class MainActivity : ComponentActivity() {
 
     private fun startAnimation() {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        frameClock?.stop(); animProgress = 0f; statusMsg = "Animando..."; isPlaying = true
+        // Arreglo 2: Unificamos a 5 segundos exactos (5f * 30fps)
+        frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."; isPlaying = true
         val clock = FrameClock(fps = 30) { frame ->
-            val p = min(1f, frame / (30f * 3f))
+            val p = min(1f, frame / (30f * 5f))
             animProgress = p; runOnUiThread { drawPreview() }
             if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar"; isPlaying = false }
         }
@@ -222,12 +240,16 @@ class MainActivity : ComponentActivity() {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
         statusMsg = "Exportando a Galería..."
         
-        val bmp = photo!!; val jts = joints
+        val bmp = photo!!; val jts = joints; val txt = textOverlay
         Thread {
             try {
                 val tempFile = File(cacheDir, "temp_export.mp4")
                 val exporter = Mp4Exporter(720, 1280, 30, 5f)
-                val ok = exporter.export(tempFile.absolutePath, { pct -> runOnUiThread { statusMsg = "Exportando… $pct%" } }) { progress -> renderSceneToBitmap(bmp, jts, progress, 720, 1280) }
+                
+                // Arreglo 1: En el video final NO dibujamos el esqueleto (drawSkeleton = false)
+                val ok = exporter.export(tempFile.absolutePath, { pct -> runOnUiThread { statusMsg = "Exportando… $pct%" } }) { progress -> 
+                    renderSceneToBitmap(bmp, jts, txt, progress, 720, 1280, drawSkeleton = false) 
+                }
 
                 if (ok) {
                     val resolver = contentResolver
@@ -253,10 +275,16 @@ class MainActivity : ComponentActivity() {
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
-        try { renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints) } finally { holder.unlockCanvasAndPost(canvas) }
+        try { 
+            // En la vista previa SÍ dibujamos el esqueleto (drawSkeleton = true)
+            renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true) 
+        } finally { holder.unlockCanvasAndPost(canvas) }
     }
 
-    private fun renderScene(canvas: Canvas, w: Int, h: Int, progress: Float, bmp: Bitmap?, jts: List<PointF>) {
+    private fun renderScene(
+        canvas: Canvas, w: Int, h: Int, progress: Float, 
+        bmp: Bitmap?, jts: List<PointF>, text: String, drawSkeleton: Boolean
+    ) {
         canvas.drawColor(Color.BLACK)
         bmp?.let {
             val bounce = 1.0f + (sin(progress * Math.PI * 6).toFloat() * 0.05f)
@@ -266,20 +294,36 @@ class MainActivity : ComponentActivity() {
             val dx = (w - dw) / 2f; val dy = (h - dh) / 2f
             canvas.drawBitmap(it, null, RectF(dx, dy, dx + dw, dy + dh), Paint(Paint.FILTER_BITMAP_FLAG))
             
-            val scaledJoints = jts.map { PointF(dx + (it.x / bmp.width) * dw, dy + (it.y / bmp.height) * dh) }
-            val skeletonPaint = Paint().apply { color = Color.parseColor("#E87722"); strokeWidth = 5f; style = Paint.Style.STROKE }
-            val connections = listOf(Pair(11, 12), Pair(11, 13), Pair(13, 15), Pair(12, 14), Pair(14, 16), Pair(11, 23), Pair(12, 24), Pair(23, 24), Pair(23, 25), Pair(25, 27), Pair(24, 26), Pair(26, 28))
-            
-            for ((i, j) in connections) {
-                if (i < scaledJoints.size && j < scaledJoints.size) canvas.drawLine(scaledJoints[i].x, scaledJoints[i].y, scaledJoints[j].x, scaledJoints[j].y, skeletonPaint)
+            // Dibujar Texto (Nuevo)
+            if (text.isNotEmpty()) {
+                val textPaint = Paint().apply {
+                    color = Color.WHITE
+                    textSize = 60f
+                    textAlign = Paint.Align.CENTER
+                    isAntiAlias = true
+                    setShadowLayer(8f, 4f, 4f, Color.BLACK) // Sombra para que se lea
+                }
+                // Dibujamos el texto en la parte inferior del escenario
+                canvas.drawText(text, w / 2f, h * 0.9f, textPaint)
             }
-            for (j in scaledJoints) canvas.drawCircle(j.x, j.y, 6f, Paint().apply { color = Color.RED })
+
+            // Arreglo 1: Solo dibujar esqueleto si drawSkeleton es true
+            if (drawSkeleton) {
+                val scaledJoints = jts.map { PointF(dx + (it.x / bmp.width) * dw, dy + (it.y / bmp.height) * dh) }
+                val skeletonPaint = Paint().apply { color = Color.parseColor("#E87722"); strokeWidth = 5f; style = Paint.Style.STROKE }
+                val connections = listOf(Pair(11, 12), Pair(11, 13), Pair(13, 15), Pair(12, 14), Pair(14, 16), Pair(11, 23), Pair(12, 24), Pair(23, 24), Pair(23, 25), Pair(25, 27), Pair(24, 26), Pair(26, 28))
+                
+                for ((i, j) in connections) {
+                    if (i < scaledJoints.size && j < scaledJoints.size) canvas.drawLine(scaledJoints[i].x, scaledJoints[i].y, scaledJoints[j].x, scaledJoints[j].y, skeletonPaint)
+                }
+                for (j in scaledJoints) canvas.drawCircle(j.x, j.y, 6f, Paint().apply { color = Color.RED })
+            }
         }
     }
 
-    private fun renderSceneToBitmap(bmp: Bitmap, jts: List<PointF>, progress: Float, w: Int, h: Int): Bitmap {
+    private fun renderSceneToBitmap(bmp: Bitmap, jts: List<PointF>, txt: String, progress: Float, w: Int, h: Int, drawSkeleton: Boolean): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, bmp, jts)
+        renderScene(Canvas(out), w, h, progress, bmp, jts, txt, drawSkeleton)
         return out
     }
 }
