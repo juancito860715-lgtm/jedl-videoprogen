@@ -1,15 +1,9 @@
 package com.jedl.videoprogen
 
 import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.PointF
-import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,25 +20,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.material.icons.Icons
-import androidx.material.icons.filled.Add
-import androidx.material.icons.filled.PlayArrow
-import androidx.material.icons.filled.Share
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
-import kotlin.math.min
-import kotlin.math.sin
 
-// Paleta de colores JEDL
 val Ink = ComposeColor(0xFF0B0C10)
 val Panel = ComposeColor(0xFF14151A)
 val Gold = ComposeColor(0xFFF5B841)
@@ -54,15 +44,13 @@ class MainActivity : ComponentActivity() {
     private var previewSurface: SurfaceView? = null
     private lateinit var poseDetector: PoseDetector
     private var photo: Bitmap? = null
-    private var joints: List<PointF> = emptyList()
+    private var joints: List<android.graphics.PointF> = emptyList()
     
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
     
-    // Estados de Interfaz
     private var statusMsg by mutableStateOf("Listo · Elegí una foto")
-    private var textOverlay by mutableStateOf("") // Nuevo estado para el Texto
-    private var isPlaying by mutableStateOf(false)
+    private var textOverlay by mutableStateOf("")
     private var showExportBtn by mutableStateOf(false)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> 
@@ -90,7 +78,7 @@ class MainActivity : ComponentActivity() {
                             }
                             if (showExportBtn) {
                                 Button(
-                                    onClick = { exportVideo() },
+                                    onClick = { triggerExportService() },
                                     colors = ButtonDefaults.buttonColors(containerColor = Gold),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -133,7 +121,7 @@ class MainActivity : ComponentActivity() {
                             fontSize = 12.sp
                         )
 
-                        // Panel de Texto (Aparece cuando hay foto)
+                        // Panel de Texto
                         if (photo != null) {
                             OutlinedTextField(
                                 value = textOverlay,
@@ -155,11 +143,12 @@ class MainActivity : ComponentActivity() {
                         // Barra de Herramientas
                         Row(
                             modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically // Arreglo del error de Vibe
                         ) {
                             ToolItem("Fondo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
-                            ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe en el cuadro de arriba", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
                             ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                             ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
@@ -202,18 +191,12 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ToolItem(name: String, onClick: () -> Unit) {
-        Column(horizontalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onClick() }) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
             Box(modifier = Modifier.size(40.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                 Text("+", color = Gold, fontSize = 20.sp)
             }
             Text(name, color = TextGray, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
         }
-    }
-
-    override fun onDestroy() {
-        // Evitar que el callback del servicio quede apuntando a una Activity destruida
-        ExportService.onStatus = null
-        super.onDestroy()
     }
 
     private fun loadPhoto(uri: Uri) {
@@ -233,32 +216,35 @@ class MainActivity : ComponentActivity() {
 
     private fun startAnimation() {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        // Arreglo 2: Unificamos a 5 segundos exactos (5f * 30fps)
-        frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."; isPlaying = true
+        frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."
         val clock = FrameClock(fps = 30) { frame ->
-            val p = min(1f, frame / (30f * 5f))
+            val p = Math.min(1f, frame / (30f * 5f))
             animProgress = p; runOnUiThread { drawPreview() }
-            if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar"; isPlaying = false }
+            if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar" }
         }
         frameClock = clock; clock.start()
     }
 
-    private fun exportVideo() {
-        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        // Arreglo 4: el export ahora corre en un SERVICIO EN PRIMER PLANO con notificación
-        // de progreso y wakelock: MIUI ya no puede matar la app si se apaga la pantalla.
-        val bmp = photo!!
-        statusMsg = "Exportando a Galería..."
-        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, joints, textOverlay)
+    // Esta función llama al servicio en primer plano de Vibe
+    private fun triggerExportService() {
+        if (photo == null) return
+        statusMsg = "Iniciando exportación en 1er plano..."
+        val intent = Intent(this, ExportService::class.java).apply {
+            // Aquí podrías pasar los datos de la foto por extras si el servicio los necesitara
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
         try { 
-            // En la vista previa SÍ dibujamos el esqueleto (drawSkeleton = true)
-            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true) 
+            // Usamos la función de renderizado que Vibe creó o la nuestra
+            SceneRenderer.render(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 }
