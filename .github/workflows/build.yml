@@ -1,5 +1,7 @@
 name: Build APK
 on: [push, workflow_dispatch]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -9,10 +11,23 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+      - name: Ensure fixed keystore (stable signature for updates)
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -keystore debug.keystore -storetype PKCS12 \
+              -storepass jedl2026 -keypass jedl2026 -alias jedl \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -dname "CN=JEDL Studio, O=JEDL, C=CU"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add debug.keystore
+            git commit -m "Add fixed debug keystore (stable signing)"
+            git push
+          fi
       - name: Download MediaPipe model
         run: |
           mkdir -p app/src/main/assets
-          curl -L -o app/src/main/assets/pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
+          curl -fL -o app/src/main/assets/pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Build debug APK

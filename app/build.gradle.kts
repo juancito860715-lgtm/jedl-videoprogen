@@ -9,12 +9,23 @@ android {
         applicationId = "com.jedl.videoprogen"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.2.3"
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        create("jedl") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "jedl2026"
+            keyAlias = "jedl"
+            keyPassword = "jedl2026"
+        }
+    }
+    buildTypes {
+        debug { signingConfig = signingConfigs.getByName("jedl") }
+        release { isMinifyEnabled = false }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -27,7 +38,7 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    
+
     // Dependencias de Jetpack Compose (Diseño Profesional)
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.ui:ui:1.6.1")
