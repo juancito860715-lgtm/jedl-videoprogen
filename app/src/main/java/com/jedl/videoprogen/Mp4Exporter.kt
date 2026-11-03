@@ -25,6 +25,7 @@ class Mp4Exporter(private val width: Int, private val height: Int, private val f
         var trackIndex = -1
         var muxerStarted = false
         val bufferInfo = MediaCodec.BufferInfo()
+        val timeoutUs = 10000L // 10ms para evitar perder frames
 
         try {
             for (frame in 0 until totalFrames) {
@@ -32,12 +33,13 @@ class Mp4Exporter(private val width: Int, private val height: Int, private val f
                 val yuv = bitmapToNV12(bitmap, width, height)
                 bitmap.recycle()
 
-                val inIdx = encoder.dequeueInputBuffer(10000)
-                if (inIdx >= 0) {
-                    val inputBuffer = encoder.getInputBuffer(inIdx)!!
-                    inputBuffer.clear(); inputBuffer.put(yuv)
-                    encoder.queueInputBuffer(inIdx, 0, yuv.size, frame * 1_000_000L / fps, 0)
-                }
+                var inIdx = encoder.dequeueInputBuffer(timeoutUs)
+                while (inIdx < 0) { inIdx = encoder.dequeueInputBuffer(timeoutUs) } // Esperar buffer libre
+                
+                val inputBuffer = encoder.getInputBuffer(inIdx)!!
+                inputBuffer.clear(); inputBuffer.put(yuv)
+                encoder.queueInputBuffer(inIdx, 0, yuv.size, frame * 1_000_000L / fps, 0)
+
                 while (true) {
                     val outIdx = encoder.dequeueOutputBuffer(bufferInfo, 0)
                     if (outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
@@ -53,6 +55,28 @@ class Mp4Exporter(private val width: Int, private val height: Int, private val f
                     } else break
                 }
                 onProgress(((frame + 1) * 100) / totalFrames)
+            }
+
+            // Arreglo 3: Enviar señal de FIN (EOS) y drenar
+            var eosIdx = encoder.dequeueInputBuffer(timeoutUs)
+            while (eosIdx < 0) { eosIdx = encoder.dequeueInputBuffer(timeoutUs) }
+            encoder.queueInputBuffer(eosIdx, 0, 0, (totalFrames * 1_000_000L / fps), MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            
+            var eosReceived = false
+            while (!eosReceived) {
+                val outIdx = encoder.dequeueOutputBuffer(bufferInfo, timeoutUs)
+                if (outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    trackIndex = muxer.addTrack(encoder.outputFormat); muxer.start(); muxerStarted = true
+                } else if (outIdx >= 0) {
+                    val outBuf = encoder.getOutputBuffer(outIdx)!!
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) bufferInfo.size = 0
+                    if (bufferInfo.size > 0 && muxerStarted) {
+                        outBuf.position(bufferInfo.offset); outBuf.limit(bufferInfo.offset + bufferInfo.size)
+                        muxer.writeSampleData(trackIndex, outBuf, bufferInfo)
+                    }
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) eosReceived = true
+                    encoder.releaseOutputBuffer(outIdx, false)
+                }
             }
             return true
         } finally {
