@@ -16,7 +16,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
@@ -32,7 +32,7 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
-    // Nuevas librerías visuales (Jetpack Compose)
+    // Dependencias de Jetpack Compose (Diseño Profesional)
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.compose.ui:ui:1.6.1")
     implementation("androidx.compose.ui:ui-graphics:1.6.1")
