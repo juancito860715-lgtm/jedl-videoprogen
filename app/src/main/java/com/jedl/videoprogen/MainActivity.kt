@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
                         Row(
                             modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically // Arreglo del error de Vibe
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             ToolItem("Fondo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
@@ -225,26 +225,23 @@ class MainActivity : ComponentActivity() {
         frameClock = clock; clock.start()
     }
 
-    // Esta función llama al servicio en primer plano de Vibe
+    // Arreglo 4: el export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService() {
-        if (photo == null) return
+        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
+        val bmp = photo!!
         statusMsg = "Iniciando exportación en 1er plano..."
-        val intent = Intent(this, ExportService::class.java).apply {
-            // Aquí podrías pasar los datos de la foto por extras si el servicio los necesitara
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        // El servicio recibe foto + juntas + texto por variables estaticas del companion
+        // (un Bitmap no cabe comodo en los extras de un Intent) y devuelve el estado aqui
+        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
+        ExportService.start(this, bmp, joints, textOverlay)
     }
 
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
         try { 
-            // Usamos la función de renderizado que Vibe creó o la nuestra
-            SceneRenderer.render(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true)
+            // En la vista previa SÍ dibujamos el esqueleto (drawSkeleton = true)
+            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 }
