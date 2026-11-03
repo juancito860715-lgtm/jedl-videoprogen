@@ -12,11 +12,11 @@ class PoseDetector(context: Context) {
     private val landmarker: PoseLandmarker = PoseLandmarker.createFromOptions(
         context,
         PoseLandmarker.PoseLandmarkerOptions.builder()
-            .apply {
-                baseOptions = BaseOptions.builder().setModelAssetPath("pose_landmarker.task").build()
-                runningMode = RunningMode.IMAGE
-                numPoses = 1
-            }
+            .setBaseOptions(
+                BaseOptions.builder().setModelAssetPath("pose_landmarker.task").build()
+            )
+            .setRunningMode(RunningMode.IMAGE)
+            .setNumPoses(1)
             .build()
     )
     
