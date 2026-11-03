@@ -1,14 +1,9 @@
 package com.jedl.videoprogen
 
-import android.content.ContentValues
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
@@ -33,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import java.io.File
 
 val Ink = ComposeColor(0xFF0B0C10)
 val Panel = ComposeColor(0xFF14151A)
@@ -43,18 +37,27 @@ val TextGray = ComposeColor(0xFFE7E8EE)
 class MainActivity : ComponentActivity() {
     private var previewSurface: SurfaceView? = null
     private lateinit var poseDetector: PoseDetector
+    private var segmenter: SubjectSegmenter? = null
     private var photo: Bitmap? = null
+    private var subject: Bitmap? = null
+    private var backgroundPhoto: Bitmap? = null
+    private var pieces: List<Piece>? = null
     private var joints: List<android.graphics.PointF> = emptyList()
-    
+
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
-    
+
     private var statusMsg by mutableStateOf("Listo · Elegí una foto")
     private var textOverlay by mutableStateOf("")
+    private var template by mutableStateOf("idle")
     private var showExportBtn by mutableStateOf(false)
+    private var hasCutout by mutableStateOf(false)
 
-    private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> 
-        if (uri != null) loadPhoto(uri) 
+    private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) loadPhoto(uri)
+    }
+    private val bgLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) loadBackground(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +68,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Box(modifier = Modifier.fillMaxSize().background(Ink)) {
                     Column(modifier = Modifier.fillMaxSize()) {
-                        
+
                         // Barra Superior
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(top = 40.dp, start = 16.dp, end = 16.dp, bottom = 8.dp),
@@ -107,7 +110,7 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
-                            
+
                             if (photo == null) {
                                 Text("Toca el botón '+' para cargar una foto", color = ComposeColor.Gray, fontSize = 14.sp)
                             }
@@ -121,13 +124,13 @@ class MainActivity : ComponentActivity() {
                             fontSize = 12.sp
                         )
 
-                        // Panel de Texto
+                        // Panel de Texto + Plantillas
                         if (photo != null) {
                             OutlinedTextField(
                                 value = textOverlay,
-                                onValueChange = { 
+                                onValueChange = {
                                     textOverlay = it
-                                    drawPreview() 
+                                    drawPreview()
                                 },
                                 label = { Text("Escribe un subtítulo...", color = TextGray) },
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -138,6 +141,16 @@ class MainActivity : ComponentActivity() {
                                 ),
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                             )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TemplateChip("Idle", template == "idle") { template = "idle"; drawPreview() }
+                                TemplateChip("Saludar", template == "wave") { template = "wave"; drawPreview() }
+                                TemplateChip("Caminar", template == "walk") { template = "walk"; drawPreview() }
+                                if (hasCutout) Text("· capas activas", color = TextGray, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
                         }
 
                         // Barra de Herramientas
@@ -146,11 +159,11 @@ class MainActivity : ComponentActivity() {
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ToolItem("Fondo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Fondo") { bgLauncher.launch("image/*") }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
                             ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
-                            ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
-                            ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente (v0.3.1)", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente (v0.3.2)", Toast.LENGTH_SHORT).show() }
                         }
 
                         // Línea de tiempo y Play
@@ -199,17 +212,61 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Composable
+    fun TemplateChip(label: String, selected: Boolean, onClick: () -> Unit) {
+        Box(
+            modifier = Modifier
+                .background(if (selected) Gold else Panel, RoundedCornerShape(50))
+                .border(1.dp, if (selected) Gold else ComposeColor.DarkGray, RoundedCornerShape(50))
+                .clickable { onClick() }
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Text(label, color = if (selected) Ink else TextGray, fontSize = 12.sp)
+        }
+    }
+
+    // Decodifica una imagen limitando su lado mayor (RAM segura para 4 GB)
+    private fun decodeScaled(uri: Uri, maxDim: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while ((bounds.outWidth / sample > maxDim) || (bounds.outHeight / sample > maxDim)) sample *= 2
+            contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            }
+        } catch (e: Exception) { null }
+    }
+
     private fun loadPhoto(uri: Uri) {
-        statusMsg = "Detectando juntas..."
+        statusMsg = "Analizando foto (juntas + recorte)..."
         Thread {
-            val bitmap = try { contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } } catch (e: Exception) { null }
+            val bitmap = decodeScaled(uri, 1600)
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
             val detected = try { poseDetector.detectJoints(bitmap) } catch (e: Exception) { emptyList() }
+            if (segmenter == null) segmenter = try { SubjectSegmenter(this@MainActivity) } catch (e: Exception) { null }
+            val cut = try { segmenter?.cutSubject(bitmap) } catch (e: Exception) { null }
+            val pcs = if (cut != null && detected.size >= 29) CutoutAnimator.buildPieces(cut, detected) else null
             runOnUiThread {
-                photo = bitmap; joints = detected; animProgress = 0f
-                statusMsg = "Foto cargada · ${detected.size} juntas detectadas"
+                photo = bitmap; joints = detected; subject = cut; pieces = pcs
+                animProgress = 0f
                 showExportBtn = true
+                hasCutout = pcs != null
+                val cutMsg = if (pcs != null) " · persona en 5 capas" else if (cut != null) " · persona recortada" else ""
+                statusMsg = "Foto cargada · ${detected.size} juntas$cutMsg"
                 drawPreview()
+            }
+        }.start()
+    }
+
+    private fun loadBackground(uri: Uri) {
+        Thread {
+            val bmp = decodeScaled(uri, 1280)
+            if (bmp != null) {
+                backgroundPhoto = bmp
+                runOnUiThread { statusMsg = "Fondo cargado"; drawPreview() }
+            } else {
+                runOnUiThread { statusMsg = "Error al cargar fondo" }
             }
         }.start()
     }
@@ -225,23 +282,20 @@ class MainActivity : ComponentActivity() {
         frameClock = clock; clock.start()
     }
 
-    // Arreglo 4: el export corre en el servicio en primer plano (anti-MIUI)
+    // El export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService() {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
         val bmp = photo!!
         statusMsg = "Iniciando exportación en 1er plano..."
-        // El servicio recibe foto + juntas + texto por variables estaticas del companion
-        // (un Bitmap no cabe comodo en los extras de un Intent) y devuelve el estado aqui
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, joints, textOverlay)
+        ExportService.start(this, bmp, subject, backgroundPhoto, pieces, joints, textOverlay, template)
     }
 
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
-        try { 
-            // En la vista previa SÍ dibujamos el esqueleto (drawSkeleton = true)
-            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true)
+        try {
+            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, subject, backgroundPhoto, pieces, joints, textOverlay, template, drawSkeleton = true)
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 }

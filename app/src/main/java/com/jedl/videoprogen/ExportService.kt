@@ -18,8 +18,8 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import java.io.File
 
-// Arreglo 4: el export corre en un SERVICIO EN PRIMER PLANO con wakelock.
-// MIUI ya no puede matar la app si se apaga la pantalla durante el export.
+// El export corre en un SERVICIO EN PRIMER PLANO con wakelock (anti-MIUI).
+// v0.3.0: recibe tambien capas, fondo y plantilla para el render cutout.
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -66,8 +66,10 @@ class ExportService : Service() {
                 nm.notify(NOTIF_ID, buildNotification("Exportando… $pct%", pct))
                 onStatus?.invoke("Exportando… $pct%")
             }) { progress ->
-                // En el video final NO se dibuja el esqueleto (Arreglo 1) y usa el MOTOR UNICO
-                SceneRenderer.renderSceneToBitmap(photo, joints, text, progress, 720, 1280, drawSkeleton = false)
+                SceneRenderer.renderSceneToBitmap(
+                    photo, pendingSubject, pendingBackground, pendingPieces,
+                    joints, text, progress, 720, 1280, pendingTemplate, drawSkeleton = false
+                )
             }
 
             if (ok) {
@@ -82,6 +84,9 @@ class ExportService : Service() {
             try { wakeLock.release() } catch (_: Exception) {}
             nm.cancel(NOTIF_ID)
             pendingPhoto = null
+            pendingSubject = null
+            pendingBackground = null
+            pendingPieces = null
             stopSelf()
         }
     }
@@ -105,14 +110,25 @@ class ExportService : Service() {
         private const val NOTIF_ID = 1
 
         @Volatile var pendingPhoto: Bitmap? = null
+        @Volatile var pendingSubject: Bitmap? = null
+        @Volatile var pendingBackground: Bitmap? = null
+        @Volatile var pendingPieces: List<Piece>? = null
         @Volatile var pendingJoints: List<PointF> = emptyList()
         @Volatile var pendingText: String = ""
+        @Volatile var pendingTemplate: String = "idle"
         @Volatile var onStatus: ((String) -> Unit)? = null
 
-        fun start(context: Context, photo: Bitmap, joints: List<PointF>, text: String) {
+        fun start(
+            context: Context, photo: Bitmap, subject: Bitmap?, background: Bitmap?,
+            pieces: List<Piece>?, joints: List<PointF>, text: String, template: String
+        ) {
             pendingPhoto = photo
+            pendingSubject = subject
+            pendingBackground = background
+            pendingPieces = pieces
             pendingJoints = joints
             pendingText = text
+            pendingTemplate = template
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
