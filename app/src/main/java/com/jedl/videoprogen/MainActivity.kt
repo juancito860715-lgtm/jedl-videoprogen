@@ -26,10 +26,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
+import androidx.material.icons.Icons
+import androidx.material.icons.filled.Add
+import androidx.material.icons.filled.PlayArrow
+import androidx.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +44,7 @@ import java.io.File
 import kotlin.math.min
 import kotlin.math.sin
 
+// Paleta de colores JEDL
 val Ink = ComposeColor(0xFF0B0C10)
 val Panel = ComposeColor(0xFF14151A)
 val Gold = ComposeColor(0xFFF5B841)
@@ -201,12 +202,18 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ToolItem(name: String, onClick: () -> Unit) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
+        Column(horizontalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onClick() }) {
             Box(modifier = Modifier.size(40.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                 Text("+", color = Gold, fontSize = 20.sp)
             }
             Text(name, color = TextGray, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
         }
+    }
+
+    override fun onDestroy() {
+        // Evitar que el callback del servicio quede apuntando a una Activity destruida
+        ExportService.onStatus = null
+        super.onDestroy()
     }
 
     private fun loadPhoto(uri: Uri) {
@@ -238,38 +245,12 @@ class MainActivity : ComponentActivity() {
 
     private fun exportVideo() {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
+        // Arreglo 4: el export ahora corre en un SERVICIO EN PRIMER PLANO con notificación
+        // de progreso y wakelock: MIUI ya no puede matar la app si se apaga la pantalla.
+        val bmp = photo!!
         statusMsg = "Exportando a Galería..."
-        
-        val bmp = photo!!; val jts = joints; val txt = textOverlay
-        Thread {
-            try {
-                val tempFile = File(cacheDir, "temp_export.mp4")
-                val exporter = Mp4Exporter(720, 1280, 30, 5f)
-                
-                // Arreglo 1: En el video final NO dibujamos el esqueleto (drawSkeleton = false)
-                val ok = exporter.export(tempFile.absolutePath, { pct -> runOnUiThread { statusMsg = "Exportando… $pct%" } }) { progress -> 
-                    renderSceneToBitmap(bmp, jts, txt, progress, 720, 1280, drawSkeleton = false) 
-                }
-
-                if (ok) {
-                    val resolver = contentResolver
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.MediaColumns.DISPLAY_NAME, "JEDL_Video_${System.currentTimeMillis()}.mp4")
-                        put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/JEDL")
-                        }
-                    }
-                    val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-                    if (uri != null) {
-                        resolver.openOutputStream(uri)?.use { out ->
-                            tempFile.inputStream().use { input -> input.copyTo(out) }
-                        }
-                        runOnUiThread { statusMsg = "✓ ¡Video guardado en tu Galería!" }
-                    }
-                }
-            } catch (e: Exception) { runOnUiThread { statusMsg = "Error: ${e.message}" } }
-        }.start()
+        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
+        ExportService.start(this, bmp, joints, textOverlay)
     }
 
     private fun drawPreview() {
@@ -277,53 +258,7 @@ class MainActivity : ComponentActivity() {
         val canvas = holder.lockCanvas() ?: return
         try { 
             // En la vista previa SÍ dibujamos el esqueleto (drawSkeleton = true)
-            renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true) 
+            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, joints, textOverlay, drawSkeleton = true) 
         } finally { holder.unlockCanvasAndPost(canvas) }
-    }
-
-    private fun renderScene(
-        canvas: Canvas, w: Int, h: Int, progress: Float, 
-        bmp: Bitmap?, jts: List<PointF>, text: String, drawSkeleton: Boolean
-    ) {
-        canvas.drawColor(Color.BLACK)
-        bmp?.let {
-            val bounce = 1.0f + (sin(progress * Math.PI * 6).toFloat() * 0.05f)
-            val baseScale = min(w.toFloat() / it.width, h.toFloat() / it.height) * 0.85f
-            val scale = baseScale * bounce
-            val dw = it.width * scale; val dh = it.height * scale
-            val dx = (w - dw) / 2f; val dy = (h - dh) / 2f
-            canvas.drawBitmap(it, null, RectF(dx, dy, dx + dw, dy + dh), Paint(Paint.FILTER_BITMAP_FLAG))
-            
-            // Dibujar Texto (Nuevo)
-            if (text.isNotEmpty()) {
-                val textPaint = Paint().apply {
-                    color = Color.WHITE
-                    textSize = 60f
-                    textAlign = Paint.Align.CENTER
-                    isAntiAlias = true
-                    setShadowLayer(8f, 4f, 4f, Color.BLACK) // Sombra para que se lea
-                }
-                // Dibujamos el texto en la parte inferior del escenario
-                canvas.drawText(text, w / 2f, h * 0.9f, textPaint)
-            }
-
-            // Arreglo 1: Solo dibujar esqueleto si drawSkeleton es true
-            if (drawSkeleton) {
-                val scaledJoints = jts.map { PointF(dx + (it.x / bmp.width) * dw, dy + (it.y / bmp.height) * dh) }
-                val skeletonPaint = Paint().apply { color = Color.parseColor("#E87722"); strokeWidth = 5f; style = Paint.Style.STROKE }
-                val connections = listOf(Pair(11, 12), Pair(11, 13), Pair(13, 15), Pair(12, 14), Pair(14, 16), Pair(11, 23), Pair(12, 24), Pair(23, 24), Pair(23, 25), Pair(25, 27), Pair(24, 26), Pair(26, 28))
-                
-                for ((i, j) in connections) {
-                    if (i < scaledJoints.size && j < scaledJoints.size) canvas.drawLine(scaledJoints[i].x, scaledJoints[i].y, scaledJoints[j].x, scaledJoints[j].y, skeletonPaint)
-                }
-                for (j in scaledJoints) canvas.drawCircle(j.x, j.y, 6f, Paint().apply { color = Color.RED })
-            }
-        }
-    }
-
-    private fun renderSceneToBitmap(bmp: Bitmap, jts: List<PointF>, txt: String, progress: Float, w: Int, h: Int, drawSkeleton: Boolean): Bitmap {
-        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, bmp, jts, txt, drawSkeleton)
-        return out
     }
 }

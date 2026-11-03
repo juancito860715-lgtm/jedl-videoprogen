@@ -1,0 +1,121 @@
+package com.jedl.videoprogen
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.PointF
+import android.os.Build
+import android.os.Environment
+import android.os.IBinder
+import android.os.PowerManager
+import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import java.io.File
+
+// Arreglo 4: el export corre en un SERVICIO EN PRIMER PLANO con wakelock.
+// MIUI ya no puede matar la app si se apaga la pantalla durante el export.
+class ExportService : Service() {
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Exportar video", NotificationManager.IMPORTANCE_LOW)
+        )
+        startForeground(NOTIF_ID, buildNotification("Preparando…", 0))
+        Thread { doExport() }.start()
+        return START_NOT_STICKY
+    }
+
+    private fun buildNotification(text: String, pct: Int): Notification {
+        val openApp = packageManager.getLaunchIntentForPackage(packageName)
+        val pi = if (openApp != null) PendingIntent.getActivity(this, 0, openApp, PendingIntent.FLAG_IMMUTABLE) else null
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("JEDL Studio · Exportando")
+            .setContentText(text)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, pct, false)
+            .setContentIntent(pi)
+            .build()
+    }
+
+    private fun doExport() {
+        val photo = pendingPhoto
+        val joints = pendingJoints
+        val text = pendingText
+        if (photo == null) { stopSelf(); return }
+
+        val nm = getSystemService(NotificationManager::class.java)
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JEDL:export").apply { setReferenceCounted(false) }
+        wakeLock.acquire(10 * 60 * 1000L)
+
+        try {
+            val tempFile = File(cacheDir, "temp_export.mp4")
+            val exporter = Mp4Exporter(720, 1280, 30, 5f)
+            val ok = exporter.export(tempFile.absolutePath, { pct ->
+                nm.notify(NOTIF_ID, buildNotification("Exportando… $pct%", pct))
+                onStatus?.invoke("Exportando… $pct%")
+            }) { progress ->
+                // En el video final NO se dibuja el esqueleto (Arreglo 1) y usa el MOTOR UNICO
+                SceneRenderer.renderSceneToBitmap(photo, joints, text, progress, 720, 1280, drawSkeleton = false)
+            }
+
+            if (ok) {
+                saveToGallery(tempFile)
+                onStatus?.invoke("✓ ¡Video guardado en tu Galería!")
+            } else {
+                onStatus?.invoke("Error al exportar")
+            }
+        } catch (e: Exception) {
+            onStatus?.invoke("Error: ${e.message}")
+        } finally {
+            try { wakeLock.release() } catch (_: Exception) {}
+            nm.cancel(NOTIF_ID)
+            pendingPhoto = null
+            stopSelf()
+        }
+    }
+
+    private fun saveToGallery(file: File) {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "JEDL_Video_${System.currentTimeMillis()}.mp4")
+            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/JEDL")
+            }
+        }
+        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return
+        contentResolver.openOutputStream(uri)?.use { out ->
+            file.inputStream().use { input -> input.copyTo(out) }
+        }
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "jedl_export"
+        private const val NOTIF_ID = 1
+
+        @Volatile var pendingPhoto: Bitmap? = null
+        @Volatile var pendingJoints: List<PointF> = emptyList()
+        @Volatile var pendingText: String = ""
+        @Volatile var onStatus: ((String) -> Unit)? = null
+
+        fun start(context: Context, photo: Bitmap, joints: List<PointF>, text: String) {
+            pendingPhoto = photo
+            pendingJoints = joints
+            pendingText = text
+            val intent = Intent(context, ExportService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+            else context.startService(intent)
+        }
+    }
+}
