@@ -24,10 +24,11 @@ jobs:
             git commit -m "Add fixed debug keystore (stable signing)"
             git push
           fi
-      - name: Download MediaPipe model
+      - name: Download MediaPipe models
         run: |
           mkdir -p app/src/main/assets
           curl -fL -o app/src/main/assets/pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
+          curl -fL -o app/src/main/assets/selfie_multiclass_256x256.tflite https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Build debug APK
