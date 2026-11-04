@@ -41,8 +41,6 @@ val TextGray = ComposeColor(0xFFE7E8EE)
 
 class MainActivity : ComponentActivity() {
     private var previewSurface: SurfaceView? = null
-    private lateinit var poseDetector: PoseDetector
-    private var segmenter: SubjectSegmenter? = null
     private var photo: Bitmap? = null
     private var backgroundPhoto: Bitmap? = null
     private var skin: PuppetSkin? = null
@@ -68,7 +66,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        poseDetector = PoseDetector(this)
 
         setContent {
             MaterialTheme {
@@ -339,27 +336,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadPhoto(uri: Uri) {
-        statusMsg = "Analizando foto (juntas + recorte)..."
+        statusMsg = "Cargando foto..."
         Thread {
             val bitmap = decodeScaled(uri, 1600)
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            val detected = try { poseDetector.detectJoints(bitmap) } catch (e: Exception) { emptyList() }
-            if (segmenter == null) segmenter = try { SubjectSegmenter(this@MainActivity) } catch (e: Exception) { null }
-            val cut = try { segmenter?.cutSubject(bitmap) } catch (e: Exception) { null }
-            // INTERCAMBIO DE TEXTURA: la cara y el torso se pegan al muñeco
-            val newSkin = if (cut != null && detected.size >= 29) {
-                try { PuppetSkin(cut, detected) } catch (e: Exception) { null }
-            } else null
+            // INTERCAMBIO DE TEXTURA: la foto COMPLETA se pega al hueso del
+            // torso del muñeco (fallback garantizado, sin depender de la IA)
+            val newSkin = PuppetSkin.fullPhoto(bitmap)
             runOnUiThread {
                 photo = bitmap
                 skin = newSkin
                 animProgress = 0f
                 showExportBtn = true
-                statusMsg = if (newSkin != null) {
-                    "Foto cargada · tu cara y torso pegados al muñeco"
-                } else {
-                    "Foto cargada · muñeco simple (la persona no se detectó completa)"
-                }
+                statusMsg = "Foto cargada · se mueve con el muñeco"
                 drawPreview()
             }
         }.start()
@@ -405,7 +394,7 @@ class MainActivity : ComponentActivity() {
                 canvas, canvas.width, canvas.height, animProgress,
                 backgroundPhoto, skin, textOverlay,
                 template, templatePrev, blendFactor(),
-                drawSkeleton = true
+                drawSkeleton = false   // huesos ocultos: solo guías matemáticas
             )
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
