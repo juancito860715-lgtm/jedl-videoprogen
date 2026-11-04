@@ -8,14 +8,14 @@ import android.graphics.RectF
 import kotlin.math.min
 
 // MOTOR ÚNICO de render: la vista previa Y el export usan ESTA misma función.
-// v0.4.0: MUÑECO PRE-RIGGEADO con intercambio de textura (cara + torso de la
-// foto pegados a los huesos). El recorte en pedazos fue ELIMINADO: el muñeco
-// tiene articulaciones diseñadas a la perfección y NUNCA deja huecos.
+// v0.4.2: MALLA DEFORMADA (SkinnedMesh: drawVertices + BitmapShader) pegada a
+// los huesos del muñeco pre-riggeado. La foto SE DOBLA con el esqueleto en
+// lugar de moverse rígida: la franja superior se inclina con la cabeza.
 object SceneRenderer {
 
     fun renderScene(
         canvas: Canvas, w: Int, h: Int, progress: Float,
-        background: Bitmap?, skin: PuppetSkin?, text: String,
+        background: Bitmap?, mesh: SkinnedMesh?, text: String,
         template: String, prevTemplate: String, blend: Float,
         drawSkeleton: Boolean
     ) {
@@ -45,10 +45,10 @@ object SceneRenderer {
         canvas.save()
         canvas.translate(ox, oy)
         canvas.scale(unit, unit)
-        PuppetEngine.drawPuppet(canvas, solved, skin)
+        PuppetEngine.drawPuppet(canvas, solved, mesh)
         canvas.restore()
 
-        // 3) ESQUELETO (solo vista previa): huesos del muñeco en dorado
+        // 3) ESQUELETO (solo depuración, desactivado por defecto)
         if (drawSkeleton) {
             val linePaint = Paint().apply {
                 color = Color.parseColor("#F5B841"); strokeWidth = 3f; style = Paint.Style.STROKE
@@ -82,11 +82,11 @@ object SceneRenderer {
     }
 
     fun renderSceneToBitmap(
-        background: Bitmap?, skin: PuppetSkin?, text: String,
+        background: Bitmap?, mesh: SkinnedMesh?, text: String,
         progress: Float, w: Int, h: Int, template: String, drawSkeleton: Boolean
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, background, skin, text, template, template, 1f, drawSkeleton)
+        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton)
         return out
     }
 }

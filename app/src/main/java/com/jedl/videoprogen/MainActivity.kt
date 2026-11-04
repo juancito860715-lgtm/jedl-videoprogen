@@ -39,11 +39,14 @@ val Panel = ComposeColor(0xFF14151A)
 val Gold = ComposeColor(0xFFF5B841)
 val TextGray = ComposeColor(0xFFE7E8EE)
 
+// Formatos de exportación disponibles (el usuario elige al exportar)
+data class VideoFormat(val label: String, val w: Int, val h: Int)
+
 class MainActivity : ComponentActivity() {
     private var previewSurface: SurfaceView? = null
     private var photo: Bitmap? = null
     private var backgroundPhoto: Bitmap? = null
-    private var skin: PuppetSkin? = null
+    private var mesh: SkinnedMesh? = null
 
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
@@ -56,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var blendStartMs by mutableStateOf(0L)
     private var showExportBtn by mutableStateOf(false)
     private var showSheet by mutableStateOf(false)
+    private var showFormatSheet by mutableStateOf(false)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -84,7 +88,7 @@ class MainActivity : ComponentActivity() {
                             }
                             if (showExportBtn) {
                                 Button(
-                                    onClick = { triggerExportService() },
+                                    onClick = { if (photo != null) showFormatSheet = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = Gold),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -133,7 +137,7 @@ class MainActivity : ComponentActivity() {
                                 value = textOverlay,
                                 onValueChange = {
                                     textOverlay = it
-                                    drawPreview()
+                                    drawPreview()   // fuerza el redibujado del SurfaceView
                                 },
                                 label = { Text("Escribe un subtítulo...", color = TextGray) },
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -194,6 +198,9 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Plantillas de Movimiento
                     if (showSheet) MovementSheet()
+
+                    // Hoja inferior: Formato del video
+                    if (showFormatSheet) FormatSheet()
                 }
             }
         }
@@ -218,6 +225,48 @@ class MainActivity : ComponentActivity() {
                 }
                 Spacer(modifier = Modifier.height(28.dp))
             }
+        }
+    }
+
+    // ---------- HOJA INFERIOR: FORMATO DEL VIDEO ----------
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun FormatSheet() {
+        ModalBottomSheet(
+            onDismissRequest = { showFormatSheet = false },
+            containerColor = Panel
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Text("Formato del video", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Elegí las dimensiones del MP4", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                FormatOption(VideoFormat("16:9 · Horizontal", 1280, 720))
+                FormatOption(VideoFormat("9:16 · Vertical", 720, 1280))
+                FormatOption(VideoFormat("1:1 · Cuadrado", 720, 720))
+                FormatOption(VideoFormat("4:5 · Retrato", 720, 900))
+                Spacer(modifier = Modifier.height(28.dp))
+            }
+        }
+    }
+
+    @Composable
+    fun FormatOption(f: VideoFormat) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .background(ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                .border(1.dp, ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                .clickable {
+                    showFormatSheet = false
+                    triggerExportService(f.w, f.h)
+                }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(f.label, color = TextGray, fontSize = 14.sp)
+            Text("${f.w} × ${f.h}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 
@@ -340,15 +389,15 @@ class MainActivity : ComponentActivity() {
         Thread {
             val bitmap = decodeScaled(uri, 1600)
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            // INTERCAMBIO DE TEXTURA: la foto COMPLETA se pega al hueso del
-            // torso del muñeco (fallback garantizado, sin depender de la IA)
-            val newSkin = PuppetSkin.fullPhoto(bitmap)
+            // MALLA DEFORMADA: la foto se convierte en una malla de triángulos
+            // pegada a los huesos (aquí corre también la autoprueba drawVertices)
+            val newMesh = SkinnedMesh(bitmap)
             runOnUiThread {
                 photo = bitmap
-                skin = newSkin
+                mesh = newMesh
                 animProgress = 0f
                 showExportBtn = true
-                statusMsg = "Foto cargada · se mueve con el muñeco"
+                statusMsg = "Foto cargada · se dobla con el muñeco"
                 drawPreview()
             }
         }.start()
@@ -378,12 +427,12 @@ class MainActivity : ComponentActivity() {
     }
 
     // El export corre en el servicio en primer plano (anti-MIUI)
-    private fun triggerExportService() {
+    private fun triggerExportService(w: Int, h: Int) {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
         val bmp = photo!!
-        statusMsg = "Iniciando exportación en 1er plano..."
+        statusMsg = "Iniciando exportación (${w}×${h})..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, backgroundPhoto, skin, textOverlay, template)
+        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h)
     }
 
     private fun drawPreview() {
@@ -392,7 +441,7 @@ class MainActivity : ComponentActivity() {
         try {
             SceneRenderer.renderScene(
                 canvas, canvas.width, canvas.height, animProgress,
-                backgroundPhoto, skin, textOverlay,
+                backgroundPhoto, mesh, textOverlay,
                 template, templatePrev, blendFactor(),
                 drawSkeleton = false   // huesos ocultos: solo guías matemáticas
             )

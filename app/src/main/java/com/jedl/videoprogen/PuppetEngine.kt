@@ -1,18 +1,16 @@
 package com.jedl.videoprogen
 
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
-import android.graphics.Paint
 import android.graphics.PointF
 import kotlin.math.max
 import kotlin.math.sin
 
 // ============================================================
-// MOTOR DE ANIMACIÓN 2D — MUÑECO PRE-RIGGEADO (v0.4.1)
+// MOTOR DE ANIMACIÓN 2D — MUÑECO PRE-RIGGEADO (v0.4.2)
 // ============================================================
-// Intercambio de textura: la foto del usuario se pega RÍGIDA al hueso
-// del torso y se mueve con el muñeco. Los huesos SON SOLO GUÍAS
+// La foto del usuario se deforma con una MALLA (SkinnedMesh:
+// drawVertices + BitmapShader). Los huesos SON SOLO GUÍAS
 // MATEMÁTICAS: no se dibujan ni relleno gris ni borde dorado.
 // Todo es Canvas 2D nativo + android.graphics.Matrix, optimizado
 // para 4 GB de RAM a 30 FPS.
@@ -147,41 +145,11 @@ object PuppetEngine {
         return Pose(m, a.bob * (1f - t) + b.bob * t, a.sway * (1f - t) + b.sway * t)
     }
 
-    // ---------- DIBUJO: SOLO LA TEXTURA (la foto), NUNCA los huesos ----------
-    // Los huesos son guías matemáticas invisibles: el relleno gris y el
-    // borde dorado fueron ELIMINADOS. Sin foto no se dibuja nada.
-    fun drawPuppet(canvas: Canvas, solved: Map<String, BonePose>, skin: PuppetSkin?) {
-        val sk = skin ?: return                        // sin foto: nada que dibujar
-        val bmp = sk.torsoBmp ?: return
-        val p = solved["torso"] ?: return
-        val tex = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        // La foto se pega RÍGIDA al hueso del torso con android.graphics.Matrix:
-        // sigue la posición y la rotación del hueso, pero nunca se dobla.
-        val m = Matrix()
-        m.setTranslate(p.joint.x, p.joint.y + sk.anchorPuppetY)   // pivote en el pecho del muñeco
-        m.postRotate(p.worldDeg - 180f)              // solo el giro extra: la foto nunca se voltea
-        m.postScale(sk.torsoScale, sk.torsoScale)    // escala foto -> unidades del muñeco
-        m.postTranslate(-sk.anchorPhoto.x, -sk.anchorPhoto.y)
-        canvas.drawBitmap(bmp, m, tex)
-    }
-}
-
-// La "piel" del muñeco: la FOTO COMPLETA del usuario pegada al hueso
-// del torso (intercambio de textura v1 — la foto entera por ahora).
-class PuppetSkin private constructor(
-    val torsoBmp: Bitmap?,       // la textura que sigue al hueso del torso
-    val anchorPhoto: PointF,     // punto de la foto que se clava al hueso (coords de foto)
-    val anchorPuppetY: Float,    // altura del hueso donde se clava (unidades del muñeco)
-    val torsoScale: Float         // unidades de muñeco por píxel de foto
-) {
-    companion object {
-        // Fallback (y v1): la foto completa, centrada sobre el pecho del
-        // muñeco. Garantiza que la foto SIEMPRE se vea y se mueva con él.
-        fun fullPhoto(photo: Bitmap): PuppetSkin = PuppetSkin(
-            torsoBmp = photo,
-            anchorPhoto = PointF(photo.width / 2f, photo.height / 2f),
-            anchorPuppetY = -0.14f,                    // centro de la foto en el pecho
-            torsoScale = 0.85f / photo.height          // la foto ocupa ~0.85 de alto del muñeco
-        )
+    // ---------- DIBUJO: SOLO LA MALLA DEFORMADA (la foto), NUNCA los huesos ----------
+    // Los huesos son guías matemáticas invisibles. Sin foto no se dibuja nada.
+    fun drawPuppet(canvas: Canvas, solved: Map<String, BonePose>, mesh: SkinnedMesh?) {
+        val m = mesh ?: return
+        m.updateVertices(solved)   // los vértices siguen la matriz de su hueso
+        m.draw(canvas)              // drawVertices + BitmapShader (con fallback seguro)
     }
 }

@@ -18,7 +18,10 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 // El export corre en un SERVICIO EN PRIMER PLANO con wakelock (anti-MIUI).
-// v0.4.0: el render usa el MUÑECO PRE-RIGGEADO + la "piel" (cara/torso).
+// v0.4.2: el render usa la MALLA DEFORMADA (SkinnedMesh) y las dimensiones
+// las elige el usuario (16:9, 9:16, 1:1, 4:5). Mp4Exporter renderiza cada
+// frame a un Bitmap y lo convierte a YUV por ByteBuffer: lo que se ve en
+// pantalla es EXACTAMENTE lo que queda en el video.
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -59,13 +62,13 @@ class ExportService : Service() {
 
         try {
             val tempFile = File(cacheDir, "temp_export.mp4")
-            val exporter = Mp4Exporter(720, 1280, 30, 5f)
+            val exporter = Mp4Exporter(pendingWidth, pendingHeight, 30, 5f)
             val ok = exporter.export(tempFile.absolutePath, { pct ->
                 nm.notify(NOTIF_ID, buildNotification("Exportando… $pct%", pct))
                 onStatus?.invoke("Exportando… $pct%")
             }) { progress ->
                 SceneRenderer.renderSceneToBitmap(
-                    pendingBackground, pendingSkin, text, progress, 720, 1280, pendingTemplate, drawSkeleton = false
+                    pendingBackground, pendingMesh, text, progress, pendingWidth, pendingHeight, pendingTemplate, drawSkeleton = false
                 )
             }
 
@@ -82,7 +85,7 @@ class ExportService : Service() {
             nm.cancel(NOTIF_ID)
             pendingPhoto = null
             pendingBackground = null
-            pendingSkin = null
+            pendingMesh = null
             pendingText = ""
             stopSelf()
         }
@@ -108,20 +111,25 @@ class ExportService : Service() {
 
         @Volatile var pendingPhoto: Bitmap? = null
         @Volatile var pendingBackground: Bitmap? = null
-        @Volatile var pendingSkin: PuppetSkin? = null
+        @Volatile var pendingMesh: SkinnedMesh? = null
         @Volatile var pendingText: String = ""
         @Volatile var pendingTemplate: String = "idle"
+        @Volatile var pendingWidth: Int = 720
+        @Volatile var pendingHeight: Int = 1280
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
             context: Context, photo: Bitmap, background: Bitmap?,
-            skin: PuppetSkin?, text: String, template: String
+            mesh: SkinnedMesh?, text: String, template: String,
+            width: Int, height: Int
         ) {
             pendingPhoto = photo
             pendingBackground = background
-            pendingSkin = skin
+            pendingMesh = mesh
             pendingText = text
             pendingTemplate = template
+            pendingWidth = width
+            pendingHeight = height
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
