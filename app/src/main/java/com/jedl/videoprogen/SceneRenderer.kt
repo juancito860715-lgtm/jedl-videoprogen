@@ -10,7 +10,7 @@ import kotlin.math.min
 import kotlin.math.sin
 
 // MOTOR UNICO de render: la vista previa Y el export usan ESTA misma funcion.
-// v0.3.0: animacion CUTOUT por capas (adios al zoom), fondo opcional desde galeria.
+// v0.3.1: capas JERARQUICAS (antebrazo hereda hombro, espinilla hereda cadera).
 object SceneRenderer {
 
     fun renderScene(
@@ -36,19 +36,15 @@ object SceneRenderer {
         val baseScale = min(w.toFloat() / actor.width, h.toFloat() / actor.height) * 0.85f
         val dx = (w - actor.width * baseScale) / 2f
         val dy = (h - actor.height * baseScale) / 2f
-        val angles = CutoutAnimator.anglesFor(template, progress, actor.height.toFloat())
+        val angles = CutoutAnimator.anglesFor(template, progress)
 
-        // 2) PERSONAJE: 5 capas rotando en sus pivotes (orden: piernas, torso, brazos)
-        if (pieces != null && pieces.size >= 5) {
+        // 2) PERSONAJE: 9 capas jerarquicas (espinillas, muslos, torso, brazos, antebrazos)
+        if (pieces != null && pieces.size >= 9) {
             canvas.save()
             canvas.translate(dx, dy)
             canvas.scale(baseScale, baseScale)
-            canvas.translate(0f, angles.bob)
-            drawPiece(canvas, pieces[0], angles.legL)
-            drawPiece(canvas, pieces[1], angles.legR)
-            drawPiece(canvas, pieces[2], 0f)
-            drawPiece(canvas, pieces[3], angles.armL)
-            drawPiece(canvas, pieces[4], angles.armR)
+            canvas.translate(0f, (angles["bob"] ?: 0f) * actor.height)
+            for (piece in pieces) drawPiece(canvas, piece, angles)
             canvas.restore()
         } else {
             // Fallback: sin capas -> persona/foto entera con respiracion suave (sin zoom)
@@ -80,16 +76,15 @@ object SceneRenderer {
         drawText(canvas, w, h, text)
     }
 
-    private fun drawPiece(canvas: Canvas, piece: Piece, angleDeg: Float) {
+    // Dibuja una capa heredando la rotacion de su padre (antebrazo tras hombro, etc.)
+    private fun drawPiece(canvas: Canvas, piece: Piece, angles: Map<String, Float>) {
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        if (angleDeg == 0f) {
-            canvas.drawBitmap(piece.bmp, piece.offX, piece.offY, paint)
-        } else {
-            canvas.save()
-            canvas.rotate(angleDeg, piece.pivotX, piece.pivotY)
-            canvas.drawBitmap(piece.bmp, piece.offX, piece.offY, paint)
-            canvas.restore()
-        }
+        canvas.save()
+        val parent = piece.parentKey
+        if (parent != null) canvas.rotate(angles[parent] ?: 0f, piece.parentX, piece.parentY)
+        canvas.rotate(angles[piece.angleKey] ?: 0f, piece.pivotX, piece.pivotY)
+        canvas.drawBitmap(piece.bmp, piece.offX, piece.offY, paint)
+        canvas.restore()
     }
 
     private fun drawText(canvas: Canvas, w: Int, h: Int, text: String) {
