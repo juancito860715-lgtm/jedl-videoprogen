@@ -9,8 +9,8 @@ android {
         applicationId = "com.jedl.videoprogen"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.4.5"
+        versionCode = 14
+        versionName = "0.4.6"
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
