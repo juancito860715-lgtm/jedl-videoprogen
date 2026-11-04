@@ -8,16 +8,18 @@ import android.graphics.RectF
 import kotlin.math.min
 
 // MOTOR ÚNICO de render: la vista previa Y el export usan ESTA misma función.
-// v0.4.2: MALLA DEFORMADA (SkinnedMesh: drawVertices + BitmapShader) pegada a
-// los huesos del muñeco pre-riggeado. La foto SE DOBLA con el esqueleto en
-// lugar de moverse rígida: la franja superior se inclina con la cabeza.
+// v0.4.3: MALLA DEFORMADA (SkinnedMesh) + RECORTE DUAL (alpha del bitmap se
+// respeta automáticamente: si el fondo es transparente, la malla solo
+// "pinta" los píxeles de la persona) + TEXTO POSICIONABLE (textX/textY)
+// con tamaño ajustable (A+/A-) y sombra reforzada.
 object SceneRenderer {
 
     fun renderScene(
         canvas: Canvas, w: Int, h: Int, progress: Float,
         background: Bitmap?, mesh: SkinnedMesh?, text: String,
         template: String, prevTemplate: String, blend: Float,
-        drawSkeleton: Boolean
+        drawSkeleton: Boolean,
+        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
         canvas.drawColor(Color.BLACK)
@@ -66,27 +68,31 @@ object SceneRenderer {
         }
 
         // 4) SUBTÍTULO al final, siempre visible encima
-        drawText(canvas, w, h, text)
+        drawText(canvas, w, h, text, textX, textY, textSize)
     }
 
-    private fun drawText(canvas: Canvas, w: Int, h: Int, text: String) {
+    private fun drawText(
+        canvas: Canvas, w: Int, h: Int, text: String,
+        textX: Float, textY: Float, textSize: Float
+    ) {
         if (text.isEmpty()) return
         val textPaint = Paint().apply {
             color = Color.WHITE
-            textSize = 60f
+            this.textSize = textSize
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
-            setShadowLayer(8f, 4f, 4f, Color.BLACK)
+            setShadowLayer(10f, 5f, 5f, Color.BLACK)   // legibilidad sobre cualquier fondo
         }
-        canvas.drawText(text, w / 2f, h * 0.9f, textPaint)
+        canvas.drawText(text, w * textX, h * textY, textPaint)
     }
 
     fun renderSceneToBitmap(
         background: Bitmap?, mesh: SkinnedMesh?, text: String,
-        progress: Float, w: Int, h: Int, template: String, drawSkeleton: Boolean
+        progress: Float, w: Int, h: Int, template: String, drawSkeleton: Boolean,
+        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton)
+        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, textX, textY, textSize)
         return out
     }
 }

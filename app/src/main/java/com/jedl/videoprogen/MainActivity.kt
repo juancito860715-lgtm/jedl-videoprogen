@@ -45,6 +45,7 @@ data class VideoFormat(val label: String, val w: Int, val h: Int)
 class MainActivity : ComponentActivity() {
     private var previewSurface: SurfaceView? = null
     private var photo: Bitmap? = null
+    private var originalPhoto: Bitmap? = null   // foto sin recortar (para reintentar el recorte)
     private var backgroundPhoto: Bitmap? = null
     private var mesh: SkinnedMesh? = null
 
@@ -54,6 +55,10 @@ class MainActivity : ComponentActivity() {
 
     private var statusMsg by mutableStateOf("Listo · Elegí una foto")
     private var textOverlay by mutableStateOf("")
+    // TEXTO POSICIONABLE (TAREA 4): textX/textY en proporción del lienzo + tamaño
+    private var textX by mutableStateOf(0.5f)
+    private var textY by mutableStateOf(0.9f)
+    private var textSizePx by mutableStateOf(60f)
     private var template by mutableStateOf("idle")
     private var templatePrev by mutableStateOf("idle")
     private var blendStartMs by mutableStateOf(0L)
@@ -131,23 +136,48 @@ class MainActivity : ComponentActivity() {
                             fontSize = 12.sp
                         )
 
-                        // Panel de Texto (subtítulo)
+                        // Panel de Texto (subtítulo) + A+ / A- (TAREA 4)
                         if (photo != null) {
-                            OutlinedTextField(
-                                value = textOverlay,
-                                onValueChange = {
-                                    textOverlay = it
-                                    drawPreview()   // fuerza el redibujado del SurfaceView
-                                },
-                                label = { Text("Escribe un subtítulo...", color = TextGray) },
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Gold,
-                                    unfocusedBorderColor = Panel,
-                                    focusedTextColor = ComposeColor.White,
-                                    unfocusedTextColor = ComposeColor.White
-                                ),
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = textOverlay,
+                                    onValueChange = {
+                                        textOverlay = it
+                                        drawPreview()   // fuerza el redibujado del SurfaceView
+                                    },
+                                    label = { Text("Escribe un subtítulo...", color = TextGray) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Gold,
+                                        unfocusedBorderColor = Panel,
+                                        focusedTextColor = ComposeColor.White,
+                                        unfocusedTextColor = ComposeColor.White
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    // A+ : agrandar el texto
+                                    IconButton(
+                                        onClick = {
+                                            textSizePx = (textSizePx + 8f).coerceAtMost(140f)
+                                            drawPreview()
+                                        },
+                                        modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
+                                    ) { Text("A+", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // A- : reducir el texto
+                                    IconButton(
+                                        onClick = {
+                                            textSizePx = (textSizePx - 8f).coerceAtLeast(24f)
+                                            drawPreview()
+                                        },
+                                        modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
+                                    ) { Text("A-", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                }
+                            }
                         }
 
                         // Barra de Herramientas
@@ -160,8 +190,8 @@ class MainActivity : ComponentActivity() {
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
                             ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
                             ToolItem("Movimiento") { showSheet = true }
+                            ToolItem("Recorte") { applyDualCutout() }
                             ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
-                            ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
 
                         // Línea de tiempo y Play
@@ -370,8 +400,9 @@ class MainActivity : ComponentActivity() {
         return ((SystemClock.elapsedRealtime() - blendStartMs) / 450f).coerceIn(0f, 1f)
     }
 
-    // ---------- CARGA DE FOTOS ----------
-    // Decodifica una imagen limitando su lado mayor (RAM segura para 4 GB)
+    // ---------- OPTIMIZACIÓN DE MEMORIA (TAREA 5) ----------
+    // Decodifica una imagen limitando su lado mayor con inSampleSize
+    // (potencia de 2). Nada supera 2048 px: RAM segura para 4 GB.
     private fun decodeScaled(uri: Uri, maxDim: Int): Bitmap? {
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -384,16 +415,28 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) { null }
     }
 
+    // Libera un bitmap solo si nadie lo sigue usando (preview, malla o export)
+    private fun safeRecycle(b: Bitmap?) {
+        if (b == null || b.isRecycled) return
+        if (ExportService.pendingPhoto === b) return
+        val pm = ExportService.pendingMesh
+        if (pm != null && pm.photo === b) return
+        try { b.recycle() } catch (_: Exception) {}
+    }
+
+    // ---------- CARGA DE FOTOS ----------
     private fun loadPhoto(uri: Uri) {
         statusMsg = "Cargando foto..."
         Thread {
             val bitmap = decodeScaled(uri, 1600)
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            // MALLA DEFORMADA: la foto se convierte en una malla de triángulos
-            // pegada a los huesos (aquí corre también la autoprueba drawVertices)
             val newMesh = SkinnedMesh(bitmap)
             runOnUiThread {
+                // Liberar los bitmaps anteriores (TAREA 5: recycle)
+                if (photo !== originalPhoto) safeRecycle(photo)
+                safeRecycle(originalPhoto)
                 photo = bitmap
+                originalPhoto = bitmap
                 mesh = newMesh
                 animProgress = 0f
                 showExportBtn = true
@@ -407,10 +450,49 @@ class MainActivity : ComponentActivity() {
         Thread {
             val bmp = decodeScaled(uri, 1280)
             if (bmp != null) {
-                backgroundPhoto = bmp
-                runOnUiThread { statusMsg = "Fondo cargado"; drawPreview() }
+                runOnUiThread {
+                    safeRecycle(backgroundPhoto)
+                    backgroundPhoto = bmp
+                    statusMsg = "Fondo cargado"
+                    drawPreview()
+                }
             } else {
                 runOnUiThread { statusMsg = "Error al cargar fondo" }
+            }
+        }.start()
+    }
+
+    // ---------- RECORTE DUAL (TAREA 1): IA -> Chroma Key ----------
+    private fun applyDualCutout() {
+        val original = originalPhoto
+        if (original == null) { statusMsg = "Elegí una foto primero"; return }
+        statusMsg = "Recortando fondo (IA)..."
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            val iaCut = SubjectSegmenter.cutSubject(this, original)
+            val tIa = SystemClock.elapsedRealtime() - t0
+            if (iaCut != null) {
+                // IA exitosa y rápida (<= 200 ms): usar el recorte fino
+                val newMesh = SkinnedMesh(iaCut)
+                runOnUiThread {
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = iaCut
+                    mesh = newMesh
+                    statusMsg = "Recorte IA aplicado (${tIa} ms)"
+                    drawPreview()
+                }
+            } else {
+                // FALLBACK OBLIGATORIO: Chroma Key + Toast
+                val chromaCut = ChromaKey.applyChromaKey(original)
+                val newMesh = SkinnedMesh(chromaCut)
+                runOnUiThread {
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = chromaCut
+                    mesh = newMesh
+                    Toast.makeText(this@MainActivity, "IA no disponible: recorte por color (Chroma Key)", Toast.LENGTH_LONG).show()
+                    statusMsg = "Recorte por color aplicado"
+                    drawPreview()
+                }
             }
         }.start()
     }
@@ -432,7 +514,7 @@ class MainActivity : ComponentActivity() {
         val bmp = photo!!
         statusMsg = "Iniciando exportación (${w}×${h})..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h)
+        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h, textX, textY, textSizePx)
     }
 
     private fun drawPreview() {
@@ -443,7 +525,8 @@ class MainActivity : ComponentActivity() {
                 canvas, canvas.width, canvas.height, animProgress,
                 backgroundPhoto, mesh, textOverlay,
                 template, templatePrev, blendFactor(),
-                drawSkeleton = false   // huesos ocultos: solo guías matemáticas
+                drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
+                textX = textX, textY = textY, textSize = textSizePx
             )
         } finally { holder.unlockCanvasAndPost(canvas) }
     }

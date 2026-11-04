@@ -18,10 +18,9 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 // El export corre en un SERVICIO EN PRIMER PLANO con wakelock (anti-MIUI).
-// v0.4.2: el render usa la MALLA DEFORMADA (SkinnedMesh) y las dimensiones
-// las elige el usuario (16:9, 9:16, 1:1, 4:5). Mp4Exporter renderiza cada
-// frame a un Bitmap y lo convierte a YUV por ByteBuffer: lo que se ve en
-// pantalla es EXACTAMENTE lo que queda en el video.
+// v0.4.3: el render usa la MALLA DEFORMADA + RECORTE + TEXTO AJUSTABLE
+// (textX/textY/textSize), así el MP4 queda EXACTAMENTE como en pantalla.
+// Las dimensiones las elige el usuario (16:9, 9:16, 1:1, 4:5).
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -68,7 +67,9 @@ class ExportService : Service() {
                 onStatus?.invoke("Exportando… $pct%")
             }) { progress ->
                 SceneRenderer.renderSceneToBitmap(
-                    pendingBackground, pendingMesh, text, progress, pendingWidth, pendingHeight, pendingTemplate, drawSkeleton = false
+                    pendingBackground, pendingMesh, text, progress, pendingWidth, pendingHeight, pendingTemplate,
+                    drawSkeleton = false,
+                    textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize
                 )
             }
 
@@ -116,12 +117,16 @@ class ExportService : Service() {
         @Volatile var pendingTemplate: String = "idle"
         @Volatile var pendingWidth: Int = 720
         @Volatile var pendingHeight: Int = 1280
+        @Volatile var pendingTextX: Float = 0.5f
+        @Volatile var pendingTextY: Float = 0.9f
+        @Volatile var pendingTextSize: Float = 60f
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
             context: Context, photo: Bitmap, background: Bitmap?,
             mesh: SkinnedMesh?, text: String, template: String,
-            width: Int, height: Int
+            width: Int, height: Int,
+            textX: Float, textY: Float, textSize: Float
         ) {
             pendingPhoto = photo
             pendingBackground = background
@@ -130,6 +135,9 @@ class ExportService : Service() {
             pendingTemplate = template
             pendingWidth = width
             pendingHeight = height
+            pendingTextX = textX
+            pendingTextY = textY
+            pendingTextSize = textSize
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
