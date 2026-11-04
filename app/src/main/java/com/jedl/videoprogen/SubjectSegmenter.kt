@@ -4,9 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.ByteBufferExtractor
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
+import java.nio.ByteOrder
 
 // ============================================================
 // RECORTE CON IA — MediaPipe ImageSegmenter (selfie multiclass)
@@ -23,6 +25,12 @@ import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
 //   conf_persona = 1 - confidence_mask_fondo[pixel]
 //   alpha_final  = conf_persona * 255
 //   Si alpha_final < 128  -> el píxel es FONDO -> transparente.
+//
+// API verificada en tasks-vision 0.10.14 (la misma del código
+// anterior que ya compilaba en este repo):
+//   - BaseOptions.builder().setModelAssetPath(...)
+//   - result.confidenceMasks() -> Optional<List<MPImage>>
+//   - ByteBufferExtractor.extract(MPImage) -> ByteBuffer
 //
 // REGLA DE FALLBACK OBLIGATORIA: si la inferencia falla o tarda
 // MÁS DE 200 ms, devuelve null y el llamador cae al Chroma Key
@@ -46,10 +54,9 @@ object SubjectSegmenter {
                         BaseOptions.builder().setModelAssetPath(MODEL_ASSET).build()
                     )
                     .setRunningMode(RunningMode.IMAGE)
-                    // La máscara de categoría da ancho/alto de la grilla;
-                    // la de CONFIANZA (float32, 0.0..1.0) da el alpha suave.
-                    .setOutputCategoryMask(true)
+                    // CONFIDENCE_MASK (float32, 0.0-1.0) para el alpha suave
                     .setOutputConfidenceMasks(true)
+                    .setOutputCategoryMask(false)
                     .build()
             )
             true
@@ -67,36 +74,34 @@ object SubjectSegmenter {
         val t0 = SystemClock.elapsedRealtime()
         return try {
             val result = s.segment(BitmapImageBuilder(bitmap).build())
-            try {
-                val cat = result.categoryMask().get()
-                val mw = cat.width
-                val mh = cat.height
-                val masks = result.confidenceMasks()
-                if (masks.isEmpty()) return null
-                // masks[0] = confianza de FONDO (categoría 0).
-                // conf_persona = 1 - conf_fondo
-                val bgMask = masks[0]
-                bgMask.rewind()
-                val w = bitmap.width
-                val h = bitmap.height
-                val src = IntArray(w * h)
-                bitmap.getPixels(src, 0, w, 0, 0, w, h)
-                val out = IntArray(w * h)
-                for (y in 0 until h) {
-                    val my = (y * mh / h).coerceAtMost(mh - 1)
-                    val row = my * mw
-                    for (x in 0 until w) {
-                        val mx = (x * mw / w).coerceAtMost(mw - 1)
-                        // alpha_final = (1 - conf_fondo) * 255; si < 128 es fondo
-                        val alpha = ((1f - bgMask.get(row + mx)) * 255f).toInt()
-                        if (alpha >= 128) out[y * w + x] = src[y * w + x]
-                    }
+            val masksOpt = result.confidenceMasks()   // Optional<List<MPImage>>
+            if (!masksOpt.isPresent) return null
+            val masks = masksOpt.get()
+            if (masks.isEmpty()) return null
+            // masks[0] = confianza de FONDO (categoría 0). MPImage.
+            val bgImg = masks[0]
+            val mw = bgImg.width
+            val mh = bgImg.height
+            val fb = ByteBufferExtractor.extract(bgImg)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()   // float32, 0.0..1.0
+            val w = bitmap.width
+            val h = bitmap.height
+            val src = IntArray(w * h)
+            bitmap.getPixels(src, 0, w, 0, 0, w, h)
+            val out = IntArray(w * h)
+            for (y in 0 until h) {
+                val my = (y * mh / h).coerceAtMost(mh - 1)
+                val row = my * mw
+                for (x in 0 until w) {
+                    val mx = (x * mw / w).coerceAtMost(mw - 1)
+                    // alpha_final = (1 - conf_fondo) * 255; si < 128 es fondo
+                    val alpha = ((1f - fb.get(row + mx)) * 255f).toInt()
+                    if (alpha >= 128) out[y * w + x] = src[y * w + x]
                 }
-                val elapsed = SystemClock.elapsedRealtime() - t0
-                if (elapsed > MAX_IA_MS) null else Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
-            } finally {
-                result.close()
             }
+            val elapsed = SystemClock.elapsedRealtime() - t0
+            if (elapsed > MAX_IA_MS) null else Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
         } catch (e: Exception) {
             null
         }
