@@ -313,7 +313,7 @@ class MainActivity : ComponentActivity() {
         blendClock?.stop()
         val clock = FrameClock(30) { frame ->
             drawPreview()
-            if (frame >= 15L) clock.stop()
+            if (frame >= 15L) blendClock?.stop()
         }
         blendClock = clock
         clock.start()

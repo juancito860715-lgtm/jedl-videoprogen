@@ -32,7 +32,19 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          ./gradlew assembleDebug --no-daemon --stacktrace > build_log.txt 2>&1
+          status=$?
+          set -e
+          grep -E "^e: |error: " build_log.txt | head -12 > build_errors.txt || true
+          if [ -s build_errors.txt ]; then
+            while IFS= read -r line; do
+              echo "::error::$(echo "$line" | sed 's|file:///home/runner/work/||' | cut -c1-220)"
+            done < build_errors.txt
+          fi
+          tail -20 build_log.txt
+          exit $status
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
