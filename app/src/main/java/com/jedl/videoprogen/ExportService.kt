@@ -9,7 +9,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PointF
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
@@ -19,7 +18,7 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 // El export corre en un SERVICIO EN PRIMER PLANO con wakelock (anti-MIUI).
-// v0.3.0: recibe tambien capas, fondo y plantilla para el render cutout.
+// v0.4.0: el render usa el MUÑECO PRE-RIGGEADO + la "piel" (cara/torso).
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -50,7 +49,6 @@ class ExportService : Service() {
 
     private fun doExport() {
         val photo = pendingPhoto
-        val joints = pendingJoints
         val text = pendingText
         if (photo == null) { stopSelf(); return }
 
@@ -67,8 +65,7 @@ class ExportService : Service() {
                 onStatus?.invoke("Exportando… $pct%")
             }) { progress ->
                 SceneRenderer.renderSceneToBitmap(
-                    photo, pendingSubject, pendingBackground, pendingPieces,
-                    joints, text, progress, 720, 1280, pendingTemplate, drawSkeleton = false
+                    pendingBackground, pendingSkin, text, progress, 720, 1280, pendingTemplate, drawSkeleton = false
                 )
             }
 
@@ -84,9 +81,9 @@ class ExportService : Service() {
             try { wakeLock.release() } catch (_: Exception) {}
             nm.cancel(NOTIF_ID)
             pendingPhoto = null
-            pendingSubject = null
             pendingBackground = null
-            pendingPieces = null
+            pendingSkin = null
+            pendingText = ""
             stopSelf()
         }
     }
@@ -110,23 +107,19 @@ class ExportService : Service() {
         private const val NOTIF_ID = 1
 
         @Volatile var pendingPhoto: Bitmap? = null
-        @Volatile var pendingSubject: Bitmap? = null
         @Volatile var pendingBackground: Bitmap? = null
-        @Volatile var pendingPieces: List<Piece>? = null
-        @Volatile var pendingJoints: List<PointF> = emptyList()
+        @Volatile var pendingSkin: PuppetSkin? = null
         @Volatile var pendingText: String = ""
         @Volatile var pendingTemplate: String = "idle"
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
-            context: Context, photo: Bitmap, subject: Bitmap?, background: Bitmap?,
-            pieces: List<Piece>?, joints: List<PointF>, text: String, template: String
+            context: Context, photo: Bitmap, background: Bitmap?,
+            skin: PuppetSkin?, text: String, template: String
         ) {
             pendingPhoto = photo
-            pendingSubject = subject
             pendingBackground = background
-            pendingPieces = pieces
-            pendingJoints = joints
+            pendingSkin = skin
             pendingText = text
             pendingTemplate = template
             val intent = Intent(context, ExportService::class.java)

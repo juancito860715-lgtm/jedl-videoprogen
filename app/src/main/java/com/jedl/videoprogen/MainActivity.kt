@@ -4,12 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,7 +25,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,19 +44,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var poseDetector: PoseDetector
     private var segmenter: SubjectSegmenter? = null
     private var photo: Bitmap? = null
-    private var subject: Bitmap? = null
     private var backgroundPhoto: Bitmap? = null
-    private var pieces: List<Piece>? = null
-    private var joints: List<android.graphics.PointF> = emptyList()
+    private var skin: PuppetSkin? = null
 
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
+    private var blendClock: FrameClock? = null
 
     private var statusMsg by mutableStateOf("Listo · Elegí una foto")
     private var textOverlay by mutableStateOf("")
     private var template by mutableStateOf("idle")
+    private var templatePrev by mutableStateOf("idle")
+    private var blendStartMs by mutableStateOf(0L)
     private var showExportBtn by mutableStateOf(false)
-    private var hasCutout by mutableStateOf(false)
+    private var showSheet by mutableStateOf(false)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -124,7 +130,7 @@ class MainActivity : ComponentActivity() {
                             fontSize = 12.sp
                         )
 
-                        // Panel de Texto + Plantillas
+                        // Panel de Texto (subtítulo)
                         if (photo != null) {
                             OutlinedTextField(
                                 value = textOverlay,
@@ -141,16 +147,6 @@ class MainActivity : ComponentActivity() {
                                 ),
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                             )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TemplateChip("Idle", template == "idle") { template = "idle"; drawPreview() }
-                                TemplateChip("Saludar", template == "wave") { template = "wave"; drawPreview() }
-                                TemplateChip("Caminar", template == "walk") { template = "walk"; drawPreview() }
-                                if (hasCutout) Text("· capas activas", color = TextGray, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
-                            }
                         }
 
                         // Barra de Herramientas
@@ -162,8 +158,9 @@ class MainActivity : ComponentActivity() {
                             ToolItem("Fondo") { bgLauncher.launch("image/*") }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
                             ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
-                            ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente (v0.3.1)", Toast.LENGTH_SHORT).show() }
-                            ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente (v0.3.2)", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Movimiento") { showSheet = true }
+                            ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Estilo") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
 
                         // Línea de tiempo y Play
@@ -197,6 +194,90 @@ class MainActivity : ComponentActivity() {
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Add", tint = Ink)
                     }
+
+                    // Hoja inferior: Plantillas de Movimiento
+                    if (showSheet) MovementSheet()
+                }
+            }
+        }
+    }
+
+    // ---------- HOJA INFERIOR: PLANTILLAS DE MOVIMIENTO ----------
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun MovementSheet() {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            containerColor = Panel
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Text("Plantillas de Movimiento", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Elegí cómo se mueve tu muñeco", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MovementOption("Reposo", "idle", Modifier.weight(1f))
+                    MovementOption("Caminar", "walk", Modifier.weight(1f))
+                    MovementOption("Saludar", "wave", Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(28.dp))
+            }
+        }
+    }
+
+    @Composable
+    fun MovementOption(label: String, key: String, modifier: Modifier = Modifier) {
+        val selected = template == key
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = modifier
+                .background(if (selected) ComposeColor(0xFF231E12) else ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                .border(1.dp, if (selected) Gold else ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                .clickable { selectTemplate(key); showSheet = false }
+                .padding(vertical = 12.dp)
+        ) {
+            MiniPuppet(key)
+            Text(label, color = if (selected) Gold else TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+
+    // Mini-muñeco dibujado a mano para cada plantilla (sin iconos externos)
+    @Composable
+    fun MiniPuppet(kind: String) {
+        Canvas(modifier = Modifier.size(width = 56.dp, height = 64.dp)) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+            val gold = Gold
+            val body = ComposeColor(0xFF3A3E46)
+            val lineW = h * 0.11f
+            val headR = h * 0.13f
+            val headCy = h * 0.15f + headR
+            val neckY = headCy + headR
+            val hipY = h * 0.60f
+            val armY = neckY + h * 0.28f
+
+            drawCircle(gold, headR, Offset(cx, headCy), style = Stroke(2.5f))
+            drawCircle(body, headR, Offset(cx, headCy))
+            drawLine(body, Offset(cx, neckY), Offset(cx, hipY), lineW, StrokeCap.Round)
+
+            when (kind) {
+                "walk" -> {
+                    drawLine(body, Offset(cx, hipY), Offset(cx - w * 0.30f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, hipY), Offset(cx + w * 0.30f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx - w * 0.26f, armY + h * 0.06f), lineW * 0.8f, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx + w * 0.26f, armY - h * 0.06f), lineW * 0.8f, StrokeCap.Round)
+                }
+                "wave" -> {
+                    drawLine(body, Offset(cx, hipY), Offset(cx - w * 0.16f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, hipY), Offset(cx + w * 0.16f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx - w * 0.24f, armY), lineW * 0.8f, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx + w * 0.32f, headCy + h * 0.02f), lineW * 0.8f, StrokeCap.Round)
+                }
+                else -> { // reposo
+                    drawLine(body, Offset(cx, hipY), Offset(cx - w * 0.16f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, hipY), Offset(cx + w * 0.16f, h * 0.92f), lineW, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx - w * 0.24f, armY), lineW * 0.8f, StrokeCap.Round)
+                    drawLine(body, Offset(cx, neckY + 4f), Offset(cx + w * 0.24f, armY), lineW * 0.8f, StrokeCap.Round)
                 }
             }
         }
@@ -212,19 +293,38 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
-    fun TemplateChip(label: String, selected: Boolean, onClick: () -> Unit) {
-        Box(
-            modifier = Modifier
-                .background(if (selected) Gold else Panel, RoundedCornerShape(50))
-                .border(1.dp, if (selected) Gold else ComposeColor.DarkGray, RoundedCornerShape(50))
-                .clickable { onClick() }
-                .padding(horizontal = 16.dp, vertical = 6.dp)
-        ) {
-            Text(label, color = if (selected) Ink else TextGray, fontSize = 12.sp)
-        }
+    // ---------- PLANTILLAS: cambio suave (0.5 s de transición) ----------
+    private fun labelFor(t: String): String = when (t) {
+        "walk" -> "Caminar"
+        "wave" -> "Saludar"
+        else -> "Reposo"
     }
 
+    private fun selectTemplate(t: String) {
+        if (t == template) return
+        templatePrev = template
+        template = t
+        blendStartMs = SystemClock.elapsedRealtime()
+        statusMsg = "Plantilla: ${labelFor(t)}"
+        runBlendPreview()
+    }
+
+    private fun runBlendPreview() {
+        blendClock?.stop()
+        val clock = FrameClock(30) { frame ->
+            drawPreview()
+            if (frame >= 15L) clock.stop()
+        }
+        blendClock = clock
+        clock.start()
+    }
+
+    private fun blendFactor(): Float {
+        if (template == templatePrev) return 1f
+        return ((SystemClock.elapsedRealtime() - blendStartMs) / 450f).coerceIn(0f, 1f)
+    }
+
+    // ---------- CARGA DE FOTOS ----------
     // Decodifica una imagen limitando su lado mayor (RAM segura para 4 GB)
     private fun decodeScaled(uri: Uri, maxDim: Int): Bitmap? {
         return try {
@@ -246,14 +346,20 @@ class MainActivity : ComponentActivity() {
             val detected = try { poseDetector.detectJoints(bitmap) } catch (e: Exception) { emptyList() }
             if (segmenter == null) segmenter = try { SubjectSegmenter(this@MainActivity) } catch (e: Exception) { null }
             val cut = try { segmenter?.cutSubject(bitmap) } catch (e: Exception) { null }
-            val pcs = if (cut != null && detected.size >= 29) CutoutAnimator.buildPieces(cut, detected) else null
+            // INTERCAMBIO DE TEXTURA: la cara y el torso se pegan al muñeco
+            val newSkin = if (cut != null && detected.size >= 29) {
+                try { PuppetSkin(cut, detected) } catch (e: Exception) { null }
+            } else null
             runOnUiThread {
-                photo = bitmap; joints = detected; subject = cut; pieces = pcs
+                photo = bitmap
+                skin = newSkin
                 animProgress = 0f
                 showExportBtn = true
-                hasCutout = pcs != null
-                val cutMsg = if (pcs != null) " · persona en 5 capas" else if (cut != null) " · persona recortada" else ""
-                statusMsg = "Foto cargada · ${detected.size} juntas$cutMsg"
+                statusMsg = if (newSkin != null) {
+                    "Foto cargada · tu cara y torso pegados al muñeco"
+                } else {
+                    "Foto cargada · muñeco simple (la persona no se detectó completa)"
+                }
                 drawPreview()
             }
         }.start()
@@ -271,12 +377,12 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    // ---------- ANIMACIÓN Y EXPORT ----------
     private fun startAnimation() {
-        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
         frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."
         val clock = FrameClock(fps = 30) { frame ->
             val p = Math.min(1f, frame / (30f * 5f))
-            animProgress = p; runOnUiThread { drawPreview() }
+            animProgress = p; drawPreview()
             if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar" }
         }
         frameClock = clock; clock.start()
@@ -288,14 +394,19 @@ class MainActivity : ComponentActivity() {
         val bmp = photo!!
         statusMsg = "Iniciando exportación en 1er plano..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, subject, backgroundPhoto, pieces, joints, textOverlay, template)
+        ExportService.start(this, bmp, backgroundPhoto, skin, textOverlay, template)
     }
 
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
         try {
-            SceneRenderer.renderScene(canvas, canvas.width, canvas.height, animProgress, photo, subject, backgroundPhoto, pieces, joints, textOverlay, template, drawSkeleton = true)
+            SceneRenderer.renderScene(
+                canvas, canvas.width, canvas.height, animProgress,
+                backgroundPhoto, skin, textOverlay,
+                template, templatePrev, blendFactor(),
+                drawSkeleton = true
+            )
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 }
