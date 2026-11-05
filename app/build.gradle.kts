@@ -9,8 +9,8 @@ android {
         applicationId = "com.jedl.videoprogen"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.4.8"
+        versionCode = 17
+        versionName = "0.4.9"
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
@@ -31,6 +31,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // El modelo CartoonGAN (3 MB) y los de MediaPipe van en assets, no comprimir:
+    // mmap directo sin gastar RAM extra
+    androidResources {
+        noCompress += listOf("tflite", "task")
+    }
 }
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
@@ -39,6 +44,8 @@ dependencies {
     // Recorte con IA ML Kit Subject Segmentation (unbundled: el modelo lo baja Google Play services la 1ra vez)
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    // Estilo anime real: TensorFlow Lite (Apache 2.0) para el CartoonGAN .tflite
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // Dependencias de Jetpack Compose (Diseño Profesional)

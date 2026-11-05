@@ -30,11 +30,17 @@ jobs:
             git commit -m "Add fixed debug keystore (stable signing)"
             git push
           fi
-      - name: Download MediaPipe models
+      - name: Download MediaPipe + CartoonGAN models
         run: |
           mkdir -p app/src/main/assets
           curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
           curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/selfie_multiclass_256x256.tflite https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
+          # White-box CartoonGAN fp16 (estilo anime offline, Apache 2.0) desde TensorFlow Hub
+          curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/whitebox_cartoon_gan_fp16.tflite "https://tfhub.dev/sayakpaul/lite-model/cartoongan/fp16/1?tf-hub-format=lite"
+          test -f app/src/main/assets/whitebox_cartoon_gan_fp16.tflite
+          SIZE=$(stat -c%s app/src/main/assets/whitebox_cartoon_gan_fp16.tflite)
+          echo "CartoonGAN tflite: ${SIZE} bytes"
+          if [ "${SIZE}" -lt 1000000 ]; then echo "::error::El modelo CartoonGAN no se descargo bien (${SIZE} bytes)"; exit 1; fi
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Build debug APK
