@@ -49,6 +49,9 @@ class MainActivity : ComponentActivity() {
     private var backgroundPhoto: Bitmap? = null
     private var mesh: SkinnedMesh? = null
 
+    // VOZ (PASO 4): gestor de TextToSpeech, listo desde onCreate
+    private var ttsManager: TtsManager? = null
+
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
     private var blendClock: FrameClock? = null
@@ -65,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private var showExportBtn by mutableStateOf(false)
     private var showSheet by mutableStateOf(false)
     private var showFormatSheet by mutableStateOf(false)
+    private var showStyleSheet by mutableStateOf(false)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -75,6 +79,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // TTS inicializado aqui: onInit es asincrono y asi ya esta listo
+        // cuando el usuario toca el boton "Voz" por primera vez
+        ttsManager = TtsManager(this)
 
         setContent {
             MaterialTheme {
@@ -190,7 +197,14 @@ class MainActivity : ComponentActivity() {
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
                             ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
                             ToolItem("Movimiento") { showSheet = true }
-                            ToolItem("Recorte") { applyDualCutout() }
+                            ToolItem("Recorte") { applyMlKitCutout() }
+                            ToolItem("Estilo") { showStyleSheet = true }
+                            ToolItem("Voz") {
+                                ttsManager?.speak(textOverlay)
+                                if (textOverlay.isBlank()) {
+                                    Toast.makeText(this@MainActivity, "Escribí un subtítulo primero", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                             ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
 
@@ -229,6 +243,9 @@ class MainActivity : ComponentActivity() {
                     // Hoja inferior: Plantillas de Movimiento
                     if (showSheet) MovementSheet()
 
+                    // Hoja inferior: Planillas de Estilo (PASO 3)
+                    if (showStyleSheet) StyleSheet()
+
                     // Hoja inferior: Formato del video
                     if (showFormatSheet) FormatSheet()
                 }
@@ -255,6 +272,47 @@ class MainActivity : ComponentActivity() {
                 }
                 Spacer(modifier = Modifier.height(28.dp))
             }
+        }
+    }
+
+    // ---------- HOJA INFERIOR: PLANILLAS DE ESTILO (PASO 3) ----------
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun StyleSheet() {
+        ModalBottomSheet(
+            onDismissRequest = { showStyleSheet = false },
+            containerColor = Panel
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Text("Planillas de Estilo", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Elegí el filtro de tu foto", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                StyleOption("Anime", "ANIME")
+                StyleOption("Cómic", "COMIC")
+                StyleOption("Blanco y negro", "BW")
+                Spacer(modifier = Modifier.height(28.dp))
+            }
+        }
+    }
+
+    @Composable
+    fun StyleOption(label: String, key: String) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .background(ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                .border(1.dp, ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                .clickable {
+                    showStyleSheet = false
+                    applyStyle(key)
+                }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = TextGray, fontSize = 14.sp)
+            Text("Aplicar", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 
@@ -497,6 +555,42 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    // ---------- RECORTE CON IA ML KIT (PASO 2): el botón Recorte usa MLKitSegmenter ----------
+    private fun applyMlKitCutout() {
+        val target = photo
+        if (target == null) { statusMsg = "Elegí una foto primero"; return }
+        statusMsg = "Recortando fondo (IA ML Kit)..."
+        MLKitSegmenter.processImage(this, target) { result ->
+            // La foto es la textura de la malla: hay que reconstruir la malla
+            // con el bitmap recortado para que preview y export la muestren
+            val newMesh = SkinnedMesh(result)
+            if (photo !== originalPhoto) safeRecycle(photo)
+            photo = result
+            mesh = newMesh
+            statusMsg = "Recorte aplicado"
+            drawPreview()
+        }
+    }
+
+    // ---------- PLANILLAS DE ESTILO (PASO 3): ColorMatrix sobre la foto ----------
+    private fun applyStyle(style: String) {
+        val target = photo
+        if (target == null) { statusMsg = "Elegí una foto primero"; return }
+        statusMsg = "Aplicando estilo..."
+        Thread {
+            val styled = StyleFilter.apply(target, style)
+            runOnUiThread {
+                // La foto es la textura de la malla: reconstruir con la versión estilizada
+                val newMesh = SkinnedMesh(styled)
+                if (photo !== originalPhoto) safeRecycle(photo)
+                photo = styled
+                mesh = newMesh
+                statusMsg = "Estilo aplicado"
+                drawPreview()
+            }
+        }.start()
+    }
+
     // ---------- ANIMACIÓN Y EXPORT ----------
     private fun startAnimation() {
         frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."
@@ -529,5 +623,10 @@ class MainActivity : ComponentActivity() {
                 textX = textX, textY = textY, textSize = textSizePx
             )
         } finally { holder.unlockCanvasAndPost(canvas) }
+    }
+
+    override fun onDestroy() {
+        ttsManager?.stop()
+        super.onDestroy()
     }
 }
