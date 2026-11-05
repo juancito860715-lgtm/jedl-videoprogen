@@ -26,20 +26,23 @@ import java.nio.ByteOrder
 //   alpha_final  = conf_persona * 255
 //   Si alpha_final < 128  -> el píxel es FONDO -> transparente.
 //
-// API verificada en tasks-vision 0.10.14 (la misma del código
-// anterior que ya compilaba en este repo):
+// API verificada en tasks-vision 0.10.14:
 //   - BaseOptions.builder().setModelAssetPath(...)
 //   - result.confidenceMasks() -> Optional<List<MPImage>>
 //   - ByteBufferExtractor.extract(MPImage) -> ByteBuffer
 //
-// REGLA DE FALLBACK OBLIGATORIA: si la inferencia falla o tarda
-// MÁS DE 200 ms, devuelve null y el llamador cae al Chroma Key
-// (con Toast). NUNCA lanza excepción: la app no se cierra.
+// REGLA DE FALLBACK (v0.4.8, ajuste por prueba real en Redmi
+// Note 10 de 4 GB): la IA es la VÍA PRINCIPAL, no la excepción.
+// El umbral de 200 ms de versiones anteriores era demasiado
+// estricto para 4 GB de RAM: la IA tardaba un poco más y la app
+// caía SIEMPRE al Chroma Key (por eso "solo quitaba el fondo
+// blanco"). Ahora el umbral de seguridad es amplio (5 s): solo
+// cae al Chroma Key si la IA falla de verdad.
 // ============================================================
 object SubjectSegmenter {
 
     private const val MODEL_ASSET = "selfie_multiclass_256x256.tflite"
-    private const val MAX_IA_MS = 200L              // umbral de latencia
+    private const val MAX_IA_MS = 5000L   // seguridad anti-cuelgue, NO un límite de calidad
 
     @Volatile private var segmenter: ImageSegmenter? = null
 
@@ -67,7 +70,7 @@ object SubjectSegmenter {
     }
 
     // Devuelve la foto con el fondo transparente, o null si la IA
-    // no está disponible / falló / tardó más de 200 ms.
+    // falló de verdad (excepción o cuelgo > 5 s).
     fun cutSubject(context: Context, bitmap: Bitmap): Bitmap? {
         if (!ensureSegmenter(context)) return null
         val s = segmenter ?: return null
