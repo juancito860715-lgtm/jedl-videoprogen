@@ -322,7 +322,7 @@ class MainActivity : ComponentActivity() {
                 Text("Planillas de Estilo", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text("Elegí el filtro de tu foto", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 Spacer(modifier = Modifier.height(14.dp))
-                StyleOption("Anime", "ANIME")
+                StyleOption("Anime (IA)", "CARTOON")
                 StyleOption("Cómic", "COMIC")
                 StyleOption("Blanco y negro", "BW")
                 Spacer(modifier = Modifier.height(28.dp))
@@ -633,24 +633,62 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    // ---------- PLANILLAS DE ESTILO (PASO 3): ColorMatrix sobre la foto ----------
+    // ---------- PLANILLAS DE ESTILO (ETAPA B): ANIME REAL IA + filtros de color ----------
+    // "CARTOON" = White-box CartoonGAN offline (3 MB dentro del APK):
+    // 1 sola inferencia de red neuronal por foto (tarda unos segundos
+    // en el Redmi, es normal). Los demás estilos son ColorMatrix
+    // instantáneos. Si el modelo no está disponible, cae al filtro
+    // de color "ANIME" con Toast: la app nunca se cierra.
     private fun applyStyle(style: String) {
         val target = photo
         if (target == null) { statusMsg = "Elegí una foto primero"; return }
-        statusMsg = "Aplicando estilo..."
-        Thread {
-            val styled = StyleFilter.apply(target, style)
-            runOnUiThread {
-                // La foto es la textura de la malla: reconstruir con la versión estilizada
-                val newMesh = SkinnedMesh(styled)
-                pushUndo()
-                if (photo !== originalPhoto) safeRecycle(photo)
-                photo = styled
-                mesh = newMesh
-                statusMsg = "Estilo aplicado"
-                drawPreview()
-            }
-        }.start()
+        if (style == "CARTOON") {
+            statusMsg = "Aplicando anime (IA)... esperá unos segundos"
+            Thread {
+                val t0 = SystemClock.elapsedRealtime()
+                val cartoon = Cartoonizer.apply(this, target)
+                val ms = SystemClock.elapsedRealtime() - t0
+                if (cartoon != null) {
+                    val newMesh = SkinnedMesh(cartoon)
+                    runOnUiThread {
+                        pushUndo()
+                        if (photo !== originalPhoto) safeRecycle(photo)
+                        photo = cartoon
+                        mesh = newMesh
+                        statusMsg = "Anime IA aplicado (" + ms + " ms)"
+                        drawPreview()
+                    }
+                } else {
+                    // FALLBACK: la IA no está disponible -> filtro de color
+                    val styled = StyleFilter.apply(target, "ANIME")
+                    val newMesh = SkinnedMesh(styled)
+                    runOnUiThread {
+                        pushUndo()
+                        if (photo !== originalPhoto) safeRecycle(photo)
+                        photo = styled
+                        mesh = newMesh
+                        Toast.makeText(this@MainActivity, "IA de anime no disponible: se aplicó filtro de color", Toast.LENGTH_LONG).show()
+                        statusMsg = "Filtro de color aplicado"
+                        drawPreview()
+                    }
+                }
+            }.start()
+        } else {
+            statusMsg = "Aplicando estilo..."
+            Thread {
+                val styled = StyleFilter.apply(target, style)
+                runOnUiThread {
+                    // La foto es la textura de la malla: reconstruir con la versión estilizada
+                    val newMesh = SkinnedMesh(styled)
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = styled
+                    mesh = newMesh
+                    statusMsg = "Estilo aplicado"
+                    drawPreview()
+                }
+            }.start()
+        }
     }
 
     // ---------- ANIMACIÓN Y EXPORT ----------
