@@ -15,12 +15,16 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +33,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,6 +59,11 @@ class MainActivity : ComponentActivity() {
     // VOZ (PASO 4): gestor de TextToSpeech, listo desde onCreate
     private var ttsManager: TtsManager? = null
 
+    // DESHACER: pila de estados (foto+malla) antes de cada cambio.
+    // Máximo 4 estados para no agotar la RAM de 4 GB.
+    private class Snap(val photo: Bitmap?, val mesh: SkinnedMesh?)
+    private val undoStack = ArrayDeque<Snap>()
+
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
     private var blendClock: FrameClock? = null
@@ -69,6 +81,7 @@ class MainActivity : ComponentActivity() {
     private var showSheet by mutableStateOf(false)
     private var showFormatSheet by mutableStateOf(false)
     private var showStyleSheet by mutableStateOf(false)
+    private var canUndo by mutableStateOf(false)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -84,6 +97,7 @@ class MainActivity : ComponentActivity() {
         ttsManager = TtsManager(this)
 
         setContent {
+            val focusManager = LocalFocusManager.current
             MaterialTheme {
                 Box(modifier = Modifier.fillMaxSize().background(Ink)) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -111,9 +125,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        // Escenario (SurfaceView)
+                        // Escenario (SurfaceView). Tocar el escenario cierra el
+                        // teclado: el subtitulo queda escrito en pantalla y el
+                        // campo deja de estar activo.
                         Box(
-                            modifier = Modifier.weight(1f).padding(16.dp).border(1.dp, Panel, RoundedCornerShape(12.dp)).background(ComposeColor.Black, RoundedCornerShape(12.dp)),
+                            modifier = Modifier.weight(1f).padding(16.dp)
+                                .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+                                .border(1.dp, Panel, RoundedCornerShape(12.dp))
+                                .background(ComposeColor.Black, RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             AndroidView(
@@ -143,7 +162,7 @@ class MainActivity : ComponentActivity() {
                             fontSize = 12.sp
                         )
 
-                        // Panel de Texto (subtítulo) + A+ / A- (TAREA 4)
+                        // Panel de Texto (subtítulo) + A+ / A- (TAREA 4) + Deshacer
                         if (photo != null) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -156,6 +175,9 @@ class MainActivity : ComponentActivity() {
                                         drawPreview()   // fuerza el redibujado del SurfaceView
                                     },
                                     label = { Text("Escribe un subtítulo...", color = TextGray) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = Gold,
                                         unfocusedBorderColor = Panel,
@@ -183,6 +205,13 @@ class MainActivity : ComponentActivity() {
                                         },
                                         modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
                                     ) { Text("A-", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // DESHACER: vuelve al estado anterior (foto+malla)
+                                    IconButton(
+                                        onClick = { undoChange() },
+                                        enabled = canUndo,
+                                        modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
+                                    ) { Icon(Icons.Default.Undo, contentDescription = "Deshacer", tint = Gold, modifier = Modifier.size(16.dp)) }
                                 }
                             }
                         }
@@ -195,9 +224,9 @@ class MainActivity : ComponentActivity() {
                         ) {
                             ToolItem("Fondo") { bgLauncher.launch("image/*") }
                             ToolItem("Actor") { pickLauncher.launch("image/*") }
-                            ToolItem("Texto") { Toast.makeText(this@MainActivity, "Escribe arriba", Toast.LENGTH_SHORT).show() }
+                            ToolItem("Texto") { focusSubtitulo() }
                             ToolItem("Movimiento") { showSheet = true }
-                            ToolItem("Recorte") { applyMlKitCutout() }
+                            ToolItem("Recorte") { applyDualCutout() }
                             ToolItem("Estilo") { showStyleSheet = true }
                             ToolItem("Voz") {
                                 ttsManager?.speak(textOverlay)
@@ -251,6 +280,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // El boton "Texto" ahora re-abre el teclado del subtitulo (el campo
+    // ya no se queda pegado: tocar el escenario o "Listo" lo cierra).
+    private fun focusSubtitulo() {
+        Toast.makeText(this, "Toca el campo de subtítulo para escribir", Toast.LENGTH_SHORT).show()
     }
 
     // ---------- HOJA INFERIOR: PLANTILLAS DE MOVIMIENTO ----------
@@ -473,13 +508,46 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) { null }
     }
 
-    // Libera un bitmap solo si nadie lo sigue usando (preview, malla o export)
+    // Libera un bitmap solo si nadie lo sigue usando (preview, malla,
+    // export pendiente o estados guardados para deshacer)
     private fun safeRecycle(b: Bitmap?) {
         if (b == null || b.isRecycled) return
         if (ExportService.pendingPhoto === b) return
         val pm = ExportService.pendingMesh
         if (pm != null && pm.photo === b) return
+        for (s in undoStack) if (s.photo === b) return
         try { b.recycle() } catch (_: Exception) {}
+    }
+
+    // ---------- DESHACER (v0.4.8) ----------
+    // Guarda el estado actual (foto+malla) antes de recorte/estilo/carga.
+    // Máximo 4 estados: el más viejo se libera para no agotar la RAM.
+    private fun pushUndo() {
+        undoStack.addLast(Snap(photo, mesh))
+        while (undoStack.size > 4) {
+            val old = undoStack.removeFirst()
+            val oldBmp = old.photo
+            if (oldBmp != null && oldBmp !== originalPhoto && oldBmp !== photo) {
+                if (ExportService.pendingPhoto !== oldBmp) {
+                    val pm = ExportService.pendingMesh
+                    if (pm == null || pm.photo !== oldBmp) {
+                        try { oldBmp.recycle() } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+        canUndo = true
+    }
+
+    private fun undoChange() {
+        val snap = undoStack.removeLastOrNull() ?: return
+        val cur = photo
+        if (cur !== snap.photo && cur !== originalPhoto) safeRecycle(cur)
+        photo = snap.photo
+        mesh = snap.mesh
+        canUndo = undoStack.isNotEmpty()
+        statusMsg = "Cambio deshecho"
+        drawPreview()
     }
 
     // ---------- CARGA DE FOTOS ----------
@@ -490,6 +558,7 @@ class MainActivity : ComponentActivity() {
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
             val newMesh = SkinnedMesh(bitmap)
             runOnUiThread {
+                pushUndo()
                 // Liberar los bitmaps anteriores (TAREA 5: recycle)
                 if (photo !== originalPhoto) safeRecycle(photo)
                 safeRecycle(originalPhoto)
@@ -520,7 +589,14 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    // ---------- RECORTE DUAL (TAREA 1): IA -> Chroma Key ----------
+    // ---------- RECORTE DUAL (TAREA 1): IA MediaPipe OFFLINE -> Chroma Key ----------
+    // v0.4.8: el Recorte usa la IA MediaPipe que YA VIENE en el APK
+    // (100% offline, funciona en Cuba sin Play services). El umbral de
+    // 200 ms de versiones anteriores era demasiado estricto para el
+    // Redmi de 4 GB: ahora la IA es la vía principal (SubjectSegmenter
+    // v0.4.8) y el Chroma Key solo entra si la IA falla de verdad.
+    // Siempre trabaja sobre ORIGINAL_PHOTO: recortar 2 veces es seguro
+    // (antes recortaba sobre la foto ya recortada y salía negra).
     private fun applyDualCutout() {
         val original = originalPhoto
         if (original == null) { statusMsg = "Elegí una foto primero"; return }
@@ -530,9 +606,10 @@ class MainActivity : ComponentActivity() {
             val iaCut = SubjectSegmenter.cutSubject(this, original)
             val tIa = SystemClock.elapsedRealtime() - t0
             if (iaCut != null) {
-                // IA exitosa y rápida (<= 200 ms): usar el recorte fino
+                // IA exitosa: usar el recorte fino
                 val newMesh = SkinnedMesh(iaCut)
                 runOnUiThread {
+                    pushUndo()
                     if (photo !== originalPhoto) safeRecycle(photo)
                     photo = iaCut
                     mesh = newMesh
@@ -540,10 +617,11 @@ class MainActivity : ComponentActivity() {
                     drawPreview()
                 }
             } else {
-                // FALLBACK OBLIGATORIO: Chroma Key + Toast
+                // FALLBACK SOLO SI LA IA FALLÓ: Chroma Key + Toast
                 val chromaCut = ChromaKey.applyChromaKey(original)
                 val newMesh = SkinnedMesh(chromaCut)
                 runOnUiThread {
+                    pushUndo()
                     if (photo !== originalPhoto) safeRecycle(photo)
                     photo = chromaCut
                     mesh = newMesh
@@ -553,23 +631,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }.start()
-    }
-
-    // ---------- RECORTE CON IA ML KIT (PASO 2): el botón Recorte usa MLKitSegmenter ----------
-    private fun applyMlKitCutout() {
-        val target = photo
-        if (target == null) { statusMsg = "Elegí una foto primero"; return }
-        statusMsg = "Recortando fondo (IA ML Kit)..."
-        MLKitSegmenter.processImage(this, target) { result ->
-            // La foto es la textura de la malla: hay que reconstruir la malla
-            // con el bitmap recortado para que preview y export la muestren
-            val newMesh = SkinnedMesh(result)
-            if (photo !== originalPhoto) safeRecycle(photo)
-            photo = result
-            mesh = newMesh
-            statusMsg = "Recorte aplicado"
-            drawPreview()
-        }
     }
 
     // ---------- PLANILLAS DE ESTILO (PASO 3): ColorMatrix sobre la foto ----------
@@ -582,6 +643,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 // La foto es la textura de la malla: reconstruir con la versión estilizada
                 val newMesh = SkinnedMesh(styled)
+                pushUndo()
                 if (photo !== originalPhoto) safeRecycle(photo)
                 photo = styled
                 mesh = newMesh
