@@ -2,6 +2,8 @@ package com.jedl.videoprogen
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.PointF
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -16,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -74,8 +77,21 @@ class MainActivity : ComponentActivity() {
     private var textX by mutableStateOf(0.5f)
     private var textY by mutableStateOf(0.9f)
     private var textSizePx by mutableStateOf(60f)
-    private var template by mutableStateOf("idle")
-    private var templatePrev by mutableStateOf("idle")
+    // v0.5.0: la plantilla activa puede ser builtin (Reposo/Caminar/Saludar),
+    // una plantilla CLONADA DE VIDEO (mocap IA offline) o una creada a mano
+    // con el editor de poses (IK).
+    private var template by mutableStateOf(ActiveTemplate.of("idle"))
+    private var templatePrev by mutableStateOf(ActiveTemplate.of("idle"))
+    // Plantillas creadas por el usuario (mocap de video + poses guardadas)
+    private val userTemplates = mutableStateListOf<MotionTemplate>()
+    // MODO POSAR (IK): arrastrar la mano o el pie del muñeco con el dedo
+    private var poseMode by mutableStateOf(false)
+    private var customPose: Pose? = null
+    private val editingFrames = ArrayList<PoseFrame>()
+    private var activeLimb: Int = 0   // 0=ninguna 1=mano izq 2=mano der 3=pie izq 4=pie der
+    // Dimensiones del último render (para el hit-test del IK en pantalla)
+    @Volatile private var lastCanvasW = 0
+    @Volatile private var lastCanvasH = 0
     private var blendStartMs by mutableStateOf(0L)
     private var showExportBtn by mutableStateOf(false)
     private var showSheet by mutableStateOf(false)
@@ -88,6 +104,10 @@ class MainActivity : ComponentActivity() {
     }
     private val bgLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadBackground(uri)
+    }
+    // ETAPA C: selector de VIDEO para clonar el movimiento (mocap IA offline)
+    private val videoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) cloneFromVideo(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,6 +151,16 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier.weight(1f).padding(16.dp)
                                 .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+                                // MODO POSAR (IK): arrastrar la mano/pie del muñeco
+                                .pointerInput(poseMode) {
+                                    if (poseMode) {
+                                        detectDragGestures(
+                                            onDragStart = { offset -> selectLimb(offset.x, offset.y) },
+                                            onDrag = { change, _ -> dragLimbTo(change.position.x, change.position.y) },
+                                            onDragEnd = { activeLimb = 0 }
+                                        )
+                                    }
+                                }
                                 .border(1.dp, Panel, RoundedCornerShape(12.dp))
                                 .background(ComposeColor.Black, RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
@@ -216,6 +246,33 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        // MODO POSAR (IK): fila de controles del editor de poses
+                        if (poseMode) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { savePoseKeyframe() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Guardar pose", color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                Button(
+                                    onClick = { finishUserAnimation() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Terminar animación", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                Button(
+                                    onClick = { exitPoseMode() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Salir", color = TextGray, fontSize = 12.sp) }
+                            }
+                        }
+
                         // Barra de Herramientas
                         Row(
                             modifier = Modifier.fillMaxWidth().background(Panel).padding(vertical = 12.dp),
@@ -288,7 +345,7 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Toca el campo de subtítulo para escribir", Toast.LENGTH_SHORT).show()
     }
 
-    // ---------- HOJA INFERIOR: PLANTILLAS DE MOVIMIENTO ----------
+    // ---------- HOJA INFERIOR: PLANTILLAS DE MOVIMIENTO (v0.5.0) ----------
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun MovementSheet() {
@@ -304,6 +361,54 @@ class MainActivity : ComponentActivity() {
                     MovementOption("Reposo", "idle", Modifier.weight(1f))
                     MovementOption("Caminar", "walk", Modifier.weight(1f))
                     MovementOption("Saludar", "wave", Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // ETAPA C: clonar el movimiento de un video (mocap IA OFFLINE)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                        .border(1.dp, ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                        .clickable { showSheet = false; videoLauncher.launch("video/*") }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Clonar de un video (IA)", color = TextGray, fontSize = 14.sp)
+                        Text("Graba un video moviéndote y tu muñeco repite el movimiento · 100% offline · primeros 5 s", color = ComposeColor.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    Text("Elegir", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // MODO POSAR (IK): arrastrar mano/pie y guardar poses propias
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                        .border(1.dp, ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                        .clickable { showSheet = false; enterPoseMode() }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Posar con el dedo (IK)", color = TextGray, fontSize = 14.sp)
+                        Text("Arrastrá la mano o el pie del muñeco: codo y hombro se acomodan solos", color = ComposeColor.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    Text("Entrar", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                // Plantillas creadas por el usuario (mocap + poses guardadas)
+                if (userTemplates.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Mis plantillas", color = Gold, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    for (mt in userTemplates) {
+                        UserTemplateOption(mt)
+                    }
                 }
                 Spacer(modifier = Modifier.height(28.dp))
             }
@@ -389,13 +494,13 @@ class MainActivity : ComponentActivity() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(f.label, color = TextGray, fontSize = 14.sp)
-            Text("${f.w} × ${f.h}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text("" + f.w + " × " + f.h, color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 
     @Composable
     fun MovementOption(label: String, key: String, modifier: Modifier = Modifier) {
-        val selected = template == key
+        val selected = (template.mocap == null && template.builtin == key)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = modifier
@@ -406,6 +511,29 @@ class MainActivity : ComponentActivity() {
         ) {
             MiniPuppet(key)
             Text(label, color = if (selected) Gold else TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+
+    // Opción de una plantilla creada por el usuario (mocap o poses)
+    @Composable
+    fun UserTemplateOption(mt: MotionTemplate) {
+        val selected = (template.mocap === mt)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .background(if (selected) ComposeColor(0xFF231E12) else ComposeColor(0xFF1B1D24), RoundedCornerShape(12.dp))
+                .border(1.dp, if (selected) Gold else ComposeColor(0xFF2A2D35), RoundedCornerShape(12.dp))
+                .clickable { selectActiveTemplate(ActiveTemplate(null, mt)); showSheet = false }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(mt.name, color = if (selected) Gold else TextGray, fontSize = 14.sp)
+                Text(mt.frames.size.toString() + " poses · tocá para aplicar", color = ComposeColor.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+            Text("Aplicar", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 
@@ -470,11 +598,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectTemplate(t: String) {
-        if (t == template) return
+        selectActiveTemplate(ActiveTemplate.of(t))
+    }
+
+    // Selección unificada: builtin, mocap de video o animación propia.
+    private fun selectActiveTemplate(at: ActiveTemplate) {
+        if (at == template) return
         templatePrev = template
-        template = t
+        template = at
         blendStartMs = SystemClock.elapsedRealtime()
-        statusMsg = "Plantilla: ${labelFor(t)}"
+        val name = if (at.mocap != null) at.mocap.name else labelFor(at.builtin ?: "idle")
+        statusMsg = "Plantilla: " + name
         runBlendPreview()
     }
 
@@ -691,8 +825,194 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ============================================================
+    // ETAPA C (v0.5.0): CLONAR EL MOVIMIENTO DE UN VIDEO — MOCAP IA
+    // 100% OFFLINE (MediaPipe Pose en modo VIDEO ya viene en el APK).
+    // Es lo que hacen Modif (Plask) y ToonDance, pero sin internet:
+    // el rastro de 33 juntas del video se convierte en una plantilla
+    // de keyframes para el muñeco.
+    // PLAN B (seguridad): si el video no sirve, no detecta persona o
+    // falla la extracción, la app avisa y NO cambia nada (las
+    // plantillas actuales siguen intactas).
+    // ============================================================
+    private fun cloneFromVideo(uri: Uri) {
+        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
+        statusMsg = "Analizando video (IA offline)... esto tarda unos segundos"
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            var retriever: MediaMetadataRetriever? = null
+            var cloner: VideoMotionCloner? = null
+            try {
+                retriever = MediaMetadataRetriever()
+                retriever.setDataSource(this, uri)
+                val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
+                // RAM SEGURA (Redmi 4 GB): muestreo a 15 fps (paso de 66 ms),
+                // máximo 75 cuadros ~ 5 s, cada cuadro reescalado a 256 px de alto.
+                val limitMs = minOf(durMs, 5000L)
+                val frames = ArrayList<android.graphics.Bitmap>()
+                var ts = 0L
+                while (ts <= limitMs && frames.size < 75) {
+                    val full = retriever.getFrameAtTime(ts * 1000L, MediaMetadataRetriever.OPTION_CLOSEST) ?: break
+                    val scaled = if (full.height > 256) {
+                        val w = (full.width * 256f / full.height).toInt().coerceAtLeast(1)
+                        android.graphics.Bitmap.createScaledBitmap(full, w, 256, true).also { if (it !== full) full.recycle() }
+                    } else full
+                    frames.add(scaled)
+                    ts += 66L
+                }
+                if (frames.size < 8) {
+                    runOnUiThread { statusMsg = "No pude leer cuadros del video" }
+                    return@Thread
+                }
+                cloner = VideoMotionCloner(this)
+                val trail = cloner.extractMotion(frames)
+                for (f in frames) { try { f.recycle() } catch (_: Exception) {} }
+                val template = MotionTrailConverter.toTemplate("Video " + (userTemplates.size + 1), trail)
+                val ms = SystemClock.elapsedRealtime() - t0
+                if (template == null) {
+                    runOnUiThread { statusMsg = "No detecté una persona completa en el video" }
+                } else {
+                    runOnUiThread {
+                        userTemplates.add(template)
+                        selectActiveTemplate(ActiveTemplate(null, template))
+                        statusMsg = "¡Movimiento clonado en " + ms + " ms! (" + template.frames.size + " poses)"
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { statusMsg = "Error al analizar el video: " + (e.message ?: "?") }
+            } finally {
+                try { cloner?.close() } catch (_: Exception) {}
+                try { retriever?.release() } catch (_: Exception) {}
+            }
+        }.start()
+    }
+
+    // ============================================================
+    // MODO POSAR (IK, v0.5.0): arrastrar la mano o el pie del muñeco
+    // con el dedo y que codo/hombro (o rodilla/cadera) se acomoden
+    // solos (FABRIK). Las poses se guardan como keyframes y al final
+    // se crea una plantilla propia "Mi animación N".
+    // ============================================================
+    private fun enterPoseMode() {
+        if (photo == null) {
+            statusMsg = "Elegí una foto primero"
+            return
+        }
+        // Congelar la pose actual del template como punto de partida
+        customPose = PuppetEngine.poseForActive(template, animProgress)
+        editingFrames.clear()
+        poseMode = true
+        statusMsg = "Arrastrá la mano o el pie del muñeco"
+        drawPreview()
+    }
+
+    private fun exitPoseMode() {
+        poseMode = false
+        customPose = null
+        activeLimb = 0
+        statusMsg = "Editor de poses cerrado"
+        drawPreview()
+    }
+
+    // Toca la pantalla: elegir la extremidad más cercana (mano/pie)
+    private fun selectLimb(screenX: Float, screenY: Float) {
+        val pose = customPose ?: return
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+        val targets = arrayOf(
+            Triple(1, solved["foreArmL"]?.tip, "mano izquierda"),
+            Triple(2, solved["foreArmR"]?.tip, "mano derecha"),
+            Triple(3, solved["shinL"]?.tip, "pie izquierdo"),
+            Triple(4, solved["shinR"]?.tip, "pie derecho")
+        )
+        var best = 0
+        var bestDist = Float.MAX_VALUE
+        var bestName = ""
+        for ((id, tip, name) in targets) {
+            if (tip == null) continue
+            val px = origin.first + tip.x * unit
+            val py = origin.second + tip.y * unit
+            val d = android.graphics.PointF.length(px - screenX, py - screenY)
+            if (d < bestDist) { bestDist = d; best = id; bestName = name }
+        }
+        if (best > 0 && bestDist < unit * 0.35f) {
+            activeLimb = best
+            statusMsg = "Posando " + bestName + " (IK activo)"
+        } else {
+            activeLimb = 0
+        }
+    }
+
+    // Dedo en movimiento: resolver el IK hacia la nueva posición
+    private fun dragLimbTo(screenX: Float, screenY: Float) {
+        if (activeLimb == 0) return
+        val pose = customPose ?: return
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        val ux = (screenX - origin.first) / unit
+        val uy = (screenY - origin.second) / unit
+        val chain = when (activeLimb) {
+            1 -> Pair("armUL", "foreArmL")
+            2 -> Pair("armUR", "foreArmR")
+            3 -> Pair("thighL", "shinL")
+            else -> Pair("thighR", "shinR")
+        }
+        customPose = PuppetEngine.solveTwoBoneIk(chain.first, chain.second, pose.angles, ux, uy)
+        drawPreview()
+    }
+
+    // Guardar la pose actual como keyframe de "Mi animación"
+    private fun savePoseKeyframe() {
+        val pose = customPose ?: return
+        editingFrames.add(PoseFrame(editingFrames.size.toFloat(), pose))
+        statusMsg = "Pose " + editingFrames.size + " guardada · posá otra y volvé a guardar"
+    }
+
+    // Cerrar la animación propia: reparte las poses en el tiempo y la aplica
+    private fun finishUserAnimation() {
+        if (editingFrames.size < 2) {
+            statusMsg = "Guardá al menos 2 poses con «Guardar pose»"
+            return
+        }
+        val n = editingFrames.size
+        val frames = ArrayList<PoseFrame>(n)
+        for (i in 0 until n) {
+            val t = if (n == 1) 0f else i.toFloat() / (n - 1).toFloat()
+            frames.add(PoseFrame(t, editingFrames[i].pose))
+        }
+        val mt = MotionTemplate("Mi animación " + (userTemplates.size + 1), frames, loop = false)
+        userTemplates.add(mt)
+        poseMode = false
+        customPose = null
+        activeLimb = 0
+        selectActiveTemplate(ActiveTemplate(null, mt))
+        statusMsg = "¡Animación propia creada con " + n + " poses!"
+        drawPreview()
+    }
+
+    // Píxeles por unidad de muñeco (misma fórmula del SceneRenderer)
+    private fun puppetUnit(): Float {
+        val w = lastCanvasW.toFloat()
+        val h = lastCanvasH.toFloat()
+        if (w <= 0f || h <= 0f) return 1f
+        return minOf(w, h) * 0.88f / 0.85f
+    }
+
+    // Origen (ox, oy) del muñeco en pantalla (misma fórmula del SceneRenderer)
+    private fun puppetOrigin(pose: Pose): Pair<Float, Float> {
+        val unit = puppetUnit()
+        val ox = lastCanvasW / 2f + pose.sway * unit
+        val oy = lastCanvasH * 0.55f + pose.bob * unit
+        return Pair(ox, oy)
+    }
+
     // ---------- ANIMACIÓN Y EXPORT ----------
     private fun startAnimation() {
+        if (poseMode) {
+            Toast.makeText(this, "Tocá «Salir» del modo posar para animar", Toast.LENGTH_SHORT).show()
+            return
+        }
         frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."
         val clock = FrameClock(fps = 30) { frame ->
             val p = Math.min(1f, frame / (30f * 5f))
@@ -706,7 +1026,7 @@ class MainActivity : ComponentActivity() {
     private fun triggerExportService(w: Int, h: Int) {
         if (photo == null) { statusMsg = "Elegí una foto primero"; return }
         val bmp = photo!!
-        statusMsg = "Iniciando exportación (${w}×${h})..."
+        statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
         ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h, textX, textY, textSizePx)
     }
@@ -715,11 +1035,14 @@ class MainActivity : ComponentActivity() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
         try {
+            lastCanvasW = canvas.width
+            lastCanvasH = canvas.height
             SceneRenderer.renderScene(
                 canvas, canvas.width, canvas.height, animProgress,
                 backgroundPhoto, mesh, textOverlay,
                 template, templatePrev, blendFactor(),
                 drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
+                overridePose = customPose,   // MODO POSAR: la pose arrastrada manda
                 textX = textX, textY = textY, textSize = textSizePx
             )
         } finally { holder.unlockCanvasAndPost(canvas) }
@@ -730,3 +1053,4 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+

@@ -8,17 +8,18 @@ import android.graphics.RectF
 import kotlin.math.min
 
 // MOTOR ÚNICO de render: la vista previa Y el export usan ESTA misma función.
-// v0.4.3: MALLA DEFORMADA (SkinnedMesh) + RECORTE DUAL (alpha del bitmap se
-// respeta automáticamente: si el fondo es transparente, la malla solo
-// "pinta" los píxeles de la persona) + TEXTO POSICIONABLE (textX/textY)
-// con tamaño ajustable (A+/A-) y sombra reforzada.
+// v0.5.0: plantillas ACTIVAS (builtin, mocap de video o poses del usuario) y
+// OVERRIDE de pose (modo Posar con IK): el editor congela la pose que el
+// usuario está arrastrando y este motor la pinta exactamente igual en
+// pantalla y en el MP4 exportado.
 object SceneRenderer {
 
     fun renderScene(
         canvas: Canvas, w: Int, h: Int, progress: Float,
         background: Bitmap?, mesh: SkinnedMesh?, text: String,
-        template: String, prevTemplate: String, blend: Float,
+        template: ActiveTemplate, prevTemplate: ActiveTemplate, blend: Float,
         drawSkeleton: Boolean,
+        overridePose: Pose? = null,
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
@@ -32,13 +33,16 @@ object SceneRenderer {
             canvas.drawBitmap(background, null, RectF(bdx, bdy, bdx + bdw, bdy + bdh), Paint(Paint.FILTER_BITMAP_FLAG))
         }
 
-        // 2) MUÑECO: mezcla suave entre la plantilla anterior y la nueva
-        val s = blend * blend * (3f - 2f * blend)      // smoothstep: transición fluida
-        val pose = PuppetEngine.lerpPose(
-            PuppetEngine.poseFor(prevTemplate, progress),
-            PuppetEngine.poseFor(template, progress),
-            s
-        )
+        // 2) MUÑECO: pose de la plantilla activa. Si el editor de poses
+        //    (IK) está congelando una pose, esa manda SIEMPRE.
+        val pose = overridePose ?: run {
+            val s = blend * blend * (3f - 2f * blend)      // smoothstep: transición fluida
+            PuppetEngine.lerpPose(
+                PuppetEngine.poseForActive(prevTemplate, progress),
+                PuppetEngine.poseForActive(template, progress),
+                s
+            )
+        }
         val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f   // píxeles por unidad de muñeco
         val ox = w / 2f + pose.sway * unit
         val oy = h * 0.55f + pose.bob * unit
@@ -88,11 +92,12 @@ object SceneRenderer {
 
     fun renderSceneToBitmap(
         background: Bitmap?, mesh: SkinnedMesh?, text: String,
-        progress: Float, w: Int, h: Int, template: String, drawSkeleton: Boolean,
+        progress: Float, w: Int, h: Int, template: ActiveTemplate, drawSkeleton: Boolean,
+        overridePose: Pose? = null,
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, textX, textY, textSize)
+        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, overridePose, textX, textY, textSize)
         return out
     }
 }

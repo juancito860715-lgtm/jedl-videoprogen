@@ -18,9 +18,9 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 
 // El export corre en un SERVICIO EN PRIMER PLANO con wakelock (anti-MIUI).
-// v0.4.3: el render usa la MALLA DEFORMADA + RECORTE + TEXTO AJUSTABLE
-// (textX/textY/textSize), así el MP4 queda EXACTAMENTE como en pantalla.
-// Las dimensiones las elige el usuario (16:9, 9:16, 1:1, 4:5).
+// v0.5.0: la plantilla pendiente puede ser builtin, MOCAP de video o una
+// animación propia del usuario (ActiveTemplate) — el MP4 queda EXACTO
+// a lo que se ve en pantalla.
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -80,7 +80,7 @@ class ExportService : Service() {
                 onStatus?.invoke("Error al exportar")
             }
         } catch (e: Exception) {
-            onStatus?.invoke("Error: ${e.message}")
+            onStatus?.invoke("Error: " + e.message)
         } finally {
             try { wakeLock.release() } catch (_: Exception) {}
             nm.cancel(NOTIF_ID)
@@ -94,7 +94,7 @@ class ExportService : Service() {
 
     private fun saveToGallery(file: File) {
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "JEDL_Video_${System.currentTimeMillis()}.mp4")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "JEDL_Video_" + System.currentTimeMillis() + ".mp4")
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/JEDL")
@@ -114,7 +114,8 @@ class ExportService : Service() {
         @Volatile var pendingBackground: Bitmap? = null
         @Volatile var pendingMesh: SkinnedMesh? = null
         @Volatile var pendingText: String = ""
-        @Volatile var pendingTemplate: String = "idle"
+        // v0.5.0: plantilla ACTIVA (builtin, mocap de video o animación propia)
+        @Volatile var pendingTemplate: ActiveTemplate = ActiveTemplate.of("idle")
         @Volatile var pendingWidth: Int = 720
         @Volatile var pendingHeight: Int = 1280
         @Volatile var pendingTextX: Float = 0.5f
@@ -124,7 +125,7 @@ class ExportService : Service() {
 
         fun start(
             context: Context, photo: Bitmap, background: Bitmap?,
-            mesh: SkinnedMesh?, text: String, template: String,
+            mesh: SkinnedMesh?, text: String, template: ActiveTemplate,
             width: Int, height: Int,
             textX: Float, textY: Float, textSize: Float
         ) {
