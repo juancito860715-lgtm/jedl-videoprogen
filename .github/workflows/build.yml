@@ -36,12 +36,19 @@ jobs:
           curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/pose_landmarker.task https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
           curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/selfie_multiclass_256x256.tflite https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite
           # White-box CartoonGAN (estilo anime offline, Apache 2.0).
-          # Kaggle Models API publica: variacion "dr" (2.57 MB, 512x512, BGR)
-          # publicada por el autor del modelo (spsayakpaul/cartoongan).
-          # Fallback: TF Hub fp16 (misma familia, forma leida en runtime).
+          # 3 fuentes en cascada (la de Kaggle fallo intermitentemente el 7nov):
+          #   1) raw.githubusercontent (margaretmz/cartoonizer-with-tflite, repo del
+          #      blog oficial de TensorFlow, variacion "dr" 2.57 MB 512x512 BGR)
+          #   2) Kaggle Models API (spsayakpaul/cartoongan tfLite dr 1)
+          #   3) TF Hub fp16 (misma familia, forma leida en runtime)
           set +e
-          curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/whitebox_cartoon_gan_dr.tflite "https://www.kaggle.com/api/v1/models/spsayakpaul/cartoongan/tfLite/dr/1/download"
+          curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/whitebox_cartoon_gan_dr.tflite "https://raw.githubusercontent.com/margaretmz/cartoonizer-with-tflite/master/android/app/src/main/ml/whitebox_cartoon_gan_dr.tflite"
           SZ=$(stat -c%s app/src/main/assets/whitebox_cartoon_gan_dr.tflite 2>/dev/null || echo 0)
+          if [ "${SZ}" -lt 1000000 ]; then
+            echo "raw.githubusercontent fallo (${SZ} bytes), probando Kaggle..."
+            curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/whitebox_cartoon_gan_dr.tflite "https://www.kaggle.com/api/v1/models/spsayakpaul/cartoongan/tfLite/dr/1/download"
+            SZ=$(stat -c%s app/src/main/assets/whitebox_cartoon_gan_dr.tflite 2>/dev/null || echo 0)
+          fi
           if [ "${SZ}" -lt 1000000 ]; then
             echo "Kaggle fallo (${SZ} bytes), probando TF Hub..."
             curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/whitebox_cartoon_gan_dr.tflite "https://tfhub.dev/sayakpaul/lite-model/cartoongan/fp16/1?tf-hub-format=lite"
