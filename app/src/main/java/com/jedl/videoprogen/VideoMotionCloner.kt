@@ -37,4 +37,10 @@ class VideoMotionCloner(context: Context) {
         }
         return sequence
     }
+
+    // v0.5.0: libera el landmarker de MediaPipe (~30 MB de RAM nativa).
+    // Sin esto el proceso del clonado dejaba la IA cargada para siempre.
+    fun close() {
+        landmarker.close()
+    }
 }

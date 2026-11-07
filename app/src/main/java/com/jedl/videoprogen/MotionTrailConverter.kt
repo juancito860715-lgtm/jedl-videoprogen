@@ -62,7 +62,7 @@ object MotionTrailConverter {
         var hipScale = 0f
         for (f in valid) {
             val torsoDeg = angDeg(f[SHOULDER_MID[0]], f[SHOULDER_MID[1]], f[HIP_MID[0]], f[HIP_MID[1]])
-            hipScale = maxOf(hipScale, dist(f[SHOULDER_MID[0]], f[SHOULDER_MID[1]], f[HIP_MID[0]], f[HIP_MID[1]))
+            hipScale = maxOf(hipScale, dist(f[SHOULDER_MID[0]], f[SHOULDER_MID[1]], f[HIP_MID[0]], f[HIP_MID[1]]))
             raw.add(floatArrayOf(
                 rel(f, ARM_L, torsoDeg), rel2(f, ARM_L, torsoDeg),
                 rel(f, ARM_R, torsoDeg), rel2(f, ARM_R, torsoDeg),
@@ -81,8 +81,8 @@ object MotionTrailConverter {
 
         // 3) suavizado EMA
         val sm = ArrayList<FloatArray>(raw.size)
-        var prev = raw[0].copy()
-        sm.add(prev.copy())
+        var prev = raw[0].copyOf()
+        sm.add(prev.copyOf())
         for (i in 1 until raw.size) {
             val cur = FloatArray(8)
             for (k in 0 until 8) cur[k] = prev[k] + EMA_ALPHA * (raw[i][k] - prev[k])

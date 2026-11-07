@@ -148,7 +148,7 @@ class SkinnedMesh(val photo: Bitmap) {
                 }
                 val inv1 = s1?.let { inverses[it.bone] }
                 val inv2 = s2?.let { inverses[it.bone] }
-                if (inv1 != null) {
+                if (inv1 != null && s1 != null) {
                     bone1[v] = s1.bone
                     w1[v] = weight1
                     pt[0] = wx; pt[1] = wy
@@ -212,12 +212,12 @@ class SkinnedMesh(val photo: Bitmap) {
             val b1 = bone1[n] ?: continue
             if (!mat.containsKey(b1)) {
                 val m = solved[b1]?.matrix
-                if (m == null) { mat[b1] = null } else { val arr = FloatArray(9); m.getValues(arr); mat[b1] = arr }
+                if (m != null) { val arr = FloatArray(9); m.getValues(arr); mat[b1] = arr }
             }
             val b2 = bone2[n]
             if (b2 != null && !mat.containsKey(b2)) {
                 val m = solved[b2]?.matrix
-                if (m == null) { mat[b2] = null } else { val arr = FloatArray(9); m.getValues(arr); mat[b2] = arr }
+                if (m != null) { val arr = FloatArray(9); m.getValues(arr); mat[b2] = arr }
             }
         }
         for (n in 0 until nVerts) {
