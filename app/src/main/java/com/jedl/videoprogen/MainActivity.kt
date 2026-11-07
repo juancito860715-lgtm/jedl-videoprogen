@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -64,8 +65,11 @@ class MainActivity : ComponentActivity() {
 
     // DESHACER: pila de estados (foto+malla) antes de cada cambio.
     // Máximo 4 estados para no agotar la RAM de 4 GB.
-    private class Snap(val photo: Bitmap?, val mesh: SkinnedMesh?)
+    // v0.5.1 (FASE A): el Snap guarda también el FONDO (el estilo se puede
+    // aplicar al fondo y hay que poder deshacerlo) y existe pila de REHACER.
+    private class Snap(val photo: Bitmap?, val mesh: SkinnedMesh?, val background: Bitmap?)
     private val undoStack = ArrayDeque<Snap>()
+    private val redoStack = ArrayDeque<Snap>()
 
     @Volatile private var animProgress: Float = 0f
     private var frameClock: FrameClock? = null
@@ -88,7 +92,7 @@ class MainActivity : ComponentActivity() {
     private var poseMode by mutableStateOf(false)
     private var customPose: Pose? = null
     private val editingFrames = ArrayList<PoseFrame>()
-    private var activeLimb: Int = 0   // 0=ninguna 1=mano izq 2=mano der 3=pie izq 4=pie der
+    private var activeLimb: Int = 0   // 0=ninguno 1-4=manos/pies(IK) 5-8=codos/rodillas
     // Dimensiones del último render (para el hit-test del IK en pantalla)
     @Volatile private var lastCanvasW = 0
     @Volatile private var lastCanvasH = 0
@@ -98,6 +102,15 @@ class MainActivity : ComponentActivity() {
     private var showFormatSheet by mutableStateOf(false)
     private var showStyleSheet by mutableStateOf(false)
     private var canUndo by mutableStateOf(false)
+    private var canRedo by mutableStateOf(false)
+    // v0.5.1 (FASE A): posición libre del actor (proporción del lienzo).
+    // Arrastrás el muñeco en el escenario y queda donde lo sueltes.
+    // Preview y export usan ESTOS mismos valores: lo que ves es lo que sale.
+    private var actorX by mutableStateOf(0.5f)
+    private var actorY by mutableStateOf(0.55f)
+    // v0.5.1 (FASE A): zoom del editor de poses (1x..4x) para posar con
+    // precisión con el dedo (pedido del dueño: ZOOM+ / ZOOM-).
+    private var poseZoom by mutableStateOf(1f)
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -151,15 +164,27 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier.weight(1f).padding(16.dp)
                                 .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
-                                // MODO POSAR (IK): arrastrar la mano/pie del muñeco
+                                // v0.5.1 (FASE A): UN solo gesto de arrastre.
+                                // - MODO POSAR: arrastra los PUNTOS del muñeco (IK).
+                                // - MODO NORMAL: arrastra el ACTOR y colócalo donde
+                                //   quieras en la escena (ya no vive fijo al centro).
                                 .pointerInput(poseMode) {
-                                    if (poseMode) {
-                                        detectDragGestures(
-                                            onDragStart = { offset -> selectLimb(offset.x, offset.y) },
-                                            onDrag = { change, _ -> dragLimbTo(change.position.x, change.position.y) },
-                                            onDragEnd = { activeLimb = 0 }
-                                        )
-                                    }
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            if (poseMode) selectLimb(offset.x, offset.y)
+                                        },
+                                        onDrag = { change, _ ->
+                                            if (poseMode) dragLimbTo(change.position.x, change.position.y)
+                                            else {
+                                                if (lastCanvasW > 0 && lastCanvasH > 0 && photo != null) {
+                                                    actorX = (actorX + change.position.x / lastCanvasW).coerceIn(0.05f, 0.95f)
+                                                    actorY = (actorY + change.position.y / lastCanvasH).coerceIn(0.05f, 0.95f)
+                                                    drawPreview()
+                                                }
+                                            }
+                                        },
+                                        onDragEnd = { activeLimb = 0 }
+                                    )
                                 }
                                 .border(1.dp, Panel, RoundedCornerShape(12.dp))
                                 .background(ComposeColor.Black, RoundedCornerShape(12.dp)),
@@ -236,18 +261,46 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
                                     ) { Text("A-", color = Gold, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    // DESHACER: vuelve al estado anterior (foto+malla)
+                                    // DESHACER: vuelve al estado anterior (foto+malla+fondo)
                                     IconButton(
                                         onClick = { undoChange() },
                                         enabled = canUndo,
                                         modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
                                     ) { Icon(Icons.Default.Undo, contentDescription = "Deshacer", tint = Gold, modifier = Modifier.size(16.dp)) }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    // v0.5.1 (FASE A): REHACER — si deshiciste por descuido,
+                                    // volvés al progreso que tenías.
+                                    IconButton(
+                                        onClick = { redoChange() },
+                                        enabled = canRedo,
+                                        modifier = Modifier.size(36.dp).background(ComposeColor(0xFF1B1D24), RoundedCornerShape(8.dp))
+                                    ) { Icon(Icons.Default.Redo, contentDescription = "Rehacer", tint = Gold, modifier = Modifier.size(16.dp)) }
                                 }
                             }
                         }
 
                         // MODO POSAR (IK): fila de controles del editor de poses
                         if (poseMode) {
+                            // v0.5.1 (FASE A): ZOOM+ / ZOOM- para posar con precisión
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { poseZoom = (poseZoom + 0.5f).coerceAtMost(4f); drawPreview() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.size(width = 52.dp, height = 34.dp)
+                                ) { Text("Z+", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                Text("zoom " + poseZoom + "x", color = TextGray, fontSize = 11.sp)
+                                Button(
+                                    onClick = { poseZoom = (poseZoom - 0.5f).coerceAtLeast(1f); drawPreview() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.size(width = 52.dp, height = 34.dp)
+                                ) { Text("Z-", color = Gold, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -430,6 +483,9 @@ class MainActivity : ComponentActivity() {
                 StyleOption("Anime (IA)", "CARTOON")
                 StyleOption("Cómic", "COMIC")
                 StyleOption("Blanco y negro", "BW")
+                // v0.5.1 (FASE A): el estilo también al FONDO (pedido del dueño:
+                // actor y fondo en el mismo look de anime = escena coherente).
+                StyleOption("Anime (IA) al FONDO", "CARTOON_BG")
                 Spacer(modifier = Modifier.height(28.dp))
             }
         }
@@ -643,21 +699,25 @@ class MainActivity : ComponentActivity() {
     }
 
     // Libera un bitmap solo si nadie lo sigue usando (preview, malla,
-    // export pendiente o estados guardados para deshacer)
+    // export pendiente o estados guardados para deshacer/rehacer)
     private fun safeRecycle(b: Bitmap?) {
         if (b == null || b.isRecycled) return
         if (ExportService.pendingPhoto === b) return
+        if (ExportService.pendingBackground === b) return
         val pm = ExportService.pendingMesh
         if (pm != null && pm.photo === b) return
-        for (s in undoStack) if (s.photo === b) return
+        for (s in undoStack) if (s.photo === b || s.background === b) return
+        for (s in redoStack) if (s.photo === b || s.background === b) return
         try { b.recycle() } catch (_: Exception) {}
     }
 
-    // ---------- DESHACER (v0.4.8) ----------
-    // Guarda el estado actual (foto+malla) antes de recorte/estilo/carga.
+    // ---------- DESHACER / REHACER (v0.4.8 + v0.5.1) ----------
+    // Guarda el estado actual (foto+malla+fondo) antes de recorte/estilo/carga.
     // Máximo 4 estados: el más viejo se libera para no agotar la RAM.
     private fun pushUndo() {
-        undoStack.addLast(Snap(photo, mesh))
+        // Al hacer un CAMBIO NUEVO, la rama de rehacer queda obsoleta.
+        clearRedo()
+        undoStack.addLast(Snap(photo, mesh, backgroundPhoto))
         while (undoStack.size > 4) {
             val old = undoStack.removeFirst()
             val oldBmp = old.photo
@@ -669,18 +729,50 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            if (old.background != null && old.background !== backgroundPhoto) safeRecycle(old.background)
         }
         canUndo = true
     }
 
+    // Vacía la pila de rehacer liberando lo que ya nadie usa
+    private fun clearRedo() {
+        for (s in redoStack) {
+            if (s.photo != null && s.photo !== photo && s.photo !== originalPhoto) safeRecycle(s.photo)
+            if (s.background != null && s.background !== backgroundPhoto) safeRecycle(s.background)
+        }
+        redoStack.clear()
+        canRedo = false
+    }
+
     private fun undoChange() {
         val snap = undoStack.removeLastOrNull() ?: return
+        // El estado ACTUAL pasa a la pila de rehacer (para "adelante")
+        redoStack.addLast(Snap(photo, mesh, backgroundPhoto))
+        while (redoStack.size > 4) { redoStack.removeFirst() }
         val cur = photo
         if (cur !== snap.photo && cur !== originalPhoto) safeRecycle(cur)
         photo = snap.photo
         mesh = snap.mesh
+        backgroundPhoto = snap.background
         canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
         statusMsg = "Cambio deshecho"
+        drawPreview()
+    }
+
+    // v0.5.1 (FASE A): "adelante" — recuperar el progreso tras un atrás
+    private fun redoChange() {
+        val snap = redoStack.removeLastOrNull() ?: return
+        // El estado ACTUAL vuelve a la pila de deshacer (sin limpiar redo)
+        undoStack.addLast(Snap(photo, mesh, backgroundPhoto))
+        val cur = photo
+        if (cur !== snap.photo && cur !== originalPhoto) safeRecycle(cur)
+        photo = snap.photo
+        mesh = snap.mesh
+        backgroundPhoto = snap.background
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+        statusMsg = "Cambio rehecho"
         drawPreview()
     }
 
@@ -712,6 +804,9 @@ class MainActivity : ComponentActivity() {
             val bmp = decodeScaled(uri, 1280)
             if (bmp != null) {
                 runOnUiThread {
+                    // v0.5.1: el fondo también entra en deshacer/rehacer
+                    // (cambiar de fondo por descuido ya no lo pierde)
+                    pushUndo()
                     safeRecycle(backgroundPhoto)
                     backgroundPhoto = bmp
                     statusMsg = "Fondo cargado"
@@ -747,7 +842,7 @@ class MainActivity : ComponentActivity() {
                     if (photo !== originalPhoto) safeRecycle(photo)
                     photo = iaCut
                     mesh = newMesh
-                    statusMsg = "Recorte IA aplicado (${tIa} ms)"
+                    statusMsg = "Recorte IA aplicado (" + tIa + " ms)"
                     drawPreview()
                 }
             } else {
@@ -773,7 +868,41 @@ class MainActivity : ComponentActivity() {
     // en el Redmi, es normal). Los demás estilos son ColorMatrix
     // instantáneos. Si el modelo no está disponible, cae al filtro
     // de color "ANIME" con Toast: la app nunca se cierra.
+    // ============================================================
+    // v0.5.1 (FASE A): ESTILO AL FONDO — la IA de anime (CartoonGAN)
+    // aplicada al FONDO de la escena. Inferencia SECUENCIAL (nunca dos
+    // a la vez: RAM segura en 4 GB). Si no hay fondo, avisa y no rompe.
+    // ============================================================
+    private fun applyStyleToBackground() {
+        val target = backgroundPhoto
+        if (target == null) { statusMsg = "Elegí primero un fondo (botón Fondo)"; return }
+        statusMsg = "Aplicando anime (IA) al fondo... esperá unos segundos"
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            val cartoon = Cartoonizer.apply(this, target)
+            val ms = SystemClock.elapsedRealtime() - t0
+            if (cartoon == null) {
+                // PLAN B: sin modelo de IA -> filtro de color instantáneo
+                val styled = StyleFilter.apply(target, "ANIME")
+                runOnUiThread {
+                    pushUndo()
+                    backgroundPhoto = styled
+                    statusMsg = "Filtro de color aplicado al fondo (IA no disponible)"
+                    drawPreview()
+                }
+            } else {
+                runOnUiThread {
+                    pushUndo()
+                    backgroundPhoto = cartoon
+                    statusMsg = "Anime IA aplicado al fondo (" + ms + " ms)"
+                    drawPreview()
+                }
+            }
+        }.start()
+    }
+
     private fun applyStyle(style: String) {
+        if (style == "CARTOON_BG") { applyStyleToBackground(); return }
         val target = photo
         if (target == null) { statusMsg = "Elegí una foto primero"; return }
         if (style == "CARTOON") {
@@ -836,8 +965,17 @@ class MainActivity : ComponentActivity() {
     // plantillas actuales siguen intactas).
     // ============================================================
     private fun cloneFromVideo(uri: Uri) {
-        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        statusMsg = "Analizando video (IA offline)... esto tarda unos segundos"
+        if (photo == null) {
+            statusMsg = "Elegí una foto primero"
+            Toast.makeText(this, "Elegí una foto primero (Actor)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // v0.5.1 (FASE A): INSTRUMENTACIÓN COMPLETA. El dueño reportó que el
+        // video "nunca se mostró" SIN ningún mensaje: ahora cada paso avisa
+        // en pantalla y captura TODO error (Throwable, no solo Exception).
+        // Así la próxima prueba dice EXACTAMENTE dónde se cortó.
+        Toast.makeText(this, "Video recibido: analizando...", Toast.LENGTH_SHORT).show()
+        statusMsg = "Video recibido: abriendo..."
         Thread {
             val t0 = SystemClock.elapsedRealtime()
             var retriever: MediaMetadataRetriever? = null
@@ -846,12 +984,19 @@ class MainActivity : ComponentActivity() {
                 retriever = MediaMetadataRetriever()
                 retriever.setDataSource(this, uri)
                 val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
+                runOnUiThread { statusMsg = "Video abierto: " + (durMs / 1000f).toInt() + " s de duración" }
                 // RAM SEGURA (Redmi 4 GB): muestreo a 15 fps (paso de 66 ms),
                 // máximo 75 cuadros ~ 5 s, cada cuadro reescalado a 256 px de alto.
                 val limitMs = minOf(durMs, 5000L)
                 val frames = ArrayList<android.graphics.Bitmap>()
                 var ts = 0L
+                val extractStart = SystemClock.elapsedRealtime()
                 while (ts <= limitMs && frames.size < 75) {
+                    // guard anti-cuelgue: si la extracción tarda demasiado, corto
+                    if (SystemClock.elapsedRealtime() - extractStart > 30000L) {
+                        runOnUiThread { statusMsg = "Extracción muy lenta: " + frames.size + " cuadros en 30 s" }
+                        break
+                    }
                     val full = retriever.getFrameAtTime(ts * 1000L, MediaMetadataRetriever.OPTION_CLOSEST) ?: break
                     val scaled = if (full.height > 256) {
                         val w = (full.width * 256f / full.height).toInt().coerceAtLeast(1)
@@ -860,26 +1005,44 @@ class MainActivity : ComponentActivity() {
                     frames.add(scaled)
                     ts += 66L
                 }
+                runOnUiThread { statusMsg = "Cuadros extraídos: " + frames.size + " de ~" + (limitMs / 66L + 1) }
                 if (frames.size < 8) {
-                    runOnUiThread { statusMsg = "No pude leer cuadros del video" }
+                    runOnUiThread {
+                        statusMsg = "Solo pude leer " + frames.size + " cuadros (video corto o códec problemático)"
+                        Toast.makeText(this@MainActivity, "El video dio " + frames.size + " cuadros: probá otro video más corto", Toast.LENGTH_LONG).show()
+                    }
                     return@Thread
                 }
+                runOnUiThread { statusMsg = "Analizando movimiento con IA (" + frames.size + " cuadros)..." }
                 cloner = VideoMotionCloner(this)
                 val trail = cloner.extractMotion(frames)
                 for (f in frames) { try { f.recycle() } catch (_: Exception) {} }
+                val withPerson = trail.count { it.isNotEmpty() }
+                runOnUiThread { statusMsg = "IA lista: " + withPerson + "/" + trail.size + " cuadros con persona" }
+                runOnUiThread { statusMsg = "Convirtiendo movimiento a plantilla..." }
                 val template = MotionTrailConverter.toTemplate("Video " + (userTemplates.size + 1), trail)
                 val ms = SystemClock.elapsedRealtime() - t0
                 if (template == null) {
-                    runOnUiThread { statusMsg = "No detecté una persona completa en el video" }
+                    runOnUiThread {
+                        statusMsg = "No detecté cuerpo completo (solo " + withPerson + " cuadros válidos de " + trail.size + ")"
+                        Toast.makeText(this@MainActivity, "La persona debe verse COMPLETA en el video", Toast.LENGTH_LONG).show()
+                    }
                 } else {
                     runOnUiThread {
                         userTemplates.add(template)
                         selectActiveTemplate(ActiveTemplate(null, template))
                         statusMsg = "¡Movimiento clonado en " + ms + " ms! (" + template.frames.size + " poses)"
+                        Toast.makeText(this@MainActivity, "¡Movimiento clonado! Ya está en Mis plantillas", Toast.LENGTH_LONG).show()
                     }
                 }
-            } catch (e: Exception) {
-                runOnUiThread { statusMsg = "Error al analizar el video: " + (e.message ?: "?") }
+            } catch (t: Throwable) {
+                // v0.5.1: Throwable (no solo Exception) — si moría por un error
+                // no-Exception el proceso quedaba MUDO, exactamente el síntoma
+                // que reportó el dueño ("no apareció ningún mensaje").
+                runOnUiThread {
+                    statusMsg = "Error al analizar el video: " + (t.message ?: t.javaClass.simpleName)
+                    Toast.makeText(this@MainActivity, "Error: " + (t.message ?: t.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                }
             } finally {
                 try { cloner?.close() } catch (_: Exception) {}
                 try { retriever?.release() } catch (_: Exception) {}
@@ -901,8 +1064,9 @@ class MainActivity : ComponentActivity() {
         // Congelar la pose actual del template como punto de partida
         customPose = PuppetEngine.poseForActive(template, animProgress)
         editingFrames.clear()
+        poseZoom = 1f
         poseMode = true
-        statusMsg = "Arrastrá la mano o el pie del muñeco"
+        statusMsg = "Arrastrá la mano o el pie del muñeco (8 puntos · Z+/Z− para zoom)"
         drawPreview()
     }
 
@@ -914,17 +1078,33 @@ class MainActivity : ComponentActivity() {
         drawPreview()
     }
 
-    // Toca la pantalla: elegir la extremidad más cercana (mano/pie)
+    // Toca la pantalla: elegir el PUNTO del muñeco más cercano.
+    // v0.5.1 (FASE A): 8 puntos arrastrables (pedido del dueño: ajustar
+    // manualmente punto por punto): 4 EFECTORES (manos/pies -> IK de 2
+    // huesos) + 4 INTERMEDIOS (codos/rodillas -> orientan el antebrazo
+    // o la espinilla hacia el dedo). Con ZOOM+ el umbral de agarre es
+    // más fino para posar con precisión.
     private fun selectLimb(screenX: Float, screenY: Float) {
         val pose = customPose ?: return
         val unit = puppetUnit()
         val origin = puppetOrigin(pose)
+        // coordenadas del MUÑECO (mundo con zoom aplicado)
+        val wx: Float; val wy: Float
+        if (poseZoom > 1f) {
+            val p = toWorld(screenX, screenY, origin.first, origin.second)
+            wx = p.first; wy = p.second
+        } else { wx = screenX; wy = screenY }
         val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+        // id: 1-4 = manos/pies (IK), 5-8 = codos/rodillas (orientan)
         val targets = arrayOf(
             Triple(1, solved["foreArmL"]?.tip, "mano izquierda"),
             Triple(2, solved["foreArmR"]?.tip, "mano derecha"),
             Triple(3, solved["shinL"]?.tip, "pie izquierdo"),
-            Triple(4, solved["shinR"]?.tip, "pie derecho")
+            Triple(4, solved["shinR"]?.tip, "pie derecho"),
+            Triple(5, solved["foreArmL"]?.joint, "codo izquierdo"),
+            Triple(6, solved["foreArmR"]?.joint, "codo derecho"),
+            Triple(7, solved["shinL"]?.joint, "rodilla izquierda"),
+            Triple(8, solved["shinR"]?.joint, "rodilla derecha")
         )
         var best = 0
         var bestDist = Float.MAX_VALUE
@@ -933,32 +1113,64 @@ class MainActivity : ComponentActivity() {
             if (tip == null) continue
             val px = origin.first + tip.x * unit
             val py = origin.second + tip.y * unit
-            val d = android.graphics.PointF.length(px - screenX, py - screenY)
+            val d = android.graphics.PointF.length(px - wx, py - wy)
             if (d < bestDist) { bestDist = d; best = id; bestName = name }
         }
+        // umbral de agarre en coordenadas de MUNDO (las distancias de
+        // arriba ya están en mundo cuando hay zoom): 35% del unit
         if (best > 0 && bestDist < unit * 0.35f) {
             activeLimb = best
-            statusMsg = "Posando " + bestName + " (IK activo)"
+            statusMsg = "Posando " + bestName + " (punto " + best + "/8 · zoom " + poseZoom + "x)"
         } else {
             activeLimb = 0
         }
     }
 
-    // Dedo en movimiento: resolver el IK hacia la nueva posición
+    // pantalla -> mundo (con zoom centrado en el muñeco)
+    private fun toWorld(screenX: Float, screenY: Float, pivotX: Float, pivotY: Float): Pair<Float, Float> {
+        if (poseZoom <= 1f) return Pair(screenX, screenY)
+        return Pair(
+            pivotX + (screenX - pivotX) / poseZoom,
+            pivotY + (screenY - pivotY) / poseZoom
+        )
+    }
+
+    // mundo -> pantalla (para dibujar los puntos encima)
+    private fun toScreen(wx: Float, wy: Float, pivotX: Float, pivotY: Float): Pair<Float, Float> {
+        if (poseZoom <= 1f) return Pair(wx, wy)
+        return Pair(
+            pivotX + (wx - pivotX) * poseZoom,
+            pivotY + (wy - pivotY) * poseZoom
+        )
+    }
+
+    // Dedo en movimiento: resolver hacia la nueva posición
     private fun dragLimbTo(screenX: Float, screenY: Float) {
         if (activeLimb == 0) return
         val pose = customPose ?: return
         val unit = puppetUnit()
         val origin = puppetOrigin(pose)
-        val ux = (screenX - origin.first) / unit
-        val uy = (screenY - origin.second) / unit
-        val chain = when (activeLimb) {
-            1 -> Pair("armUL", "foreArmL")
-            2 -> Pair("armUR", "foreArmR")
-            3 -> Pair("thighL", "shinL")
-            else -> Pair("thighR", "shinR")
+        var ux = (screenX - origin.first) / unit
+        var uy = (screenY - origin.second) / unit
+        if (poseZoom > 1f) {
+            val p = toWorld(screenX, screenY, origin.first, origin.second)
+            ux = (p.first - origin.first) / unit
+            uy = (p.second - origin.second) / unit
         }
-        customPose = PuppetEngine.solveTwoBoneIk(chain.first, chain.second, pose.angles, ux, uy)
+        // id 1-4: IK de 2 huesos (hombro+codo / cadera+rodilla)
+        // id 5-8: girar SOLO el hueso inferior hacia el dedo
+        val newPose: Pose = when (activeLimb) {
+            1 -> PuppetEngine.solveTwoBoneIk("armUL", "foreArmL", pose.angles, ux, uy)
+            2 -> PuppetEngine.solveTwoBoneIk("armUR", "foreArmR", pose.angles, ux, uy)
+            3 -> PuppetEngine.solveTwoBoneIk("thighL", "shinL", pose.angles, ux, uy)
+            4 -> PuppetEngine.solveTwoBoneIk("thighR", "shinR", pose.angles, ux, uy)
+            5 -> PuppetEngine.pointBoneTo("foreArmL", pose.angles, ux, uy)
+            6 -> PuppetEngine.pointBoneTo("foreArmR", pose.angles, ux, uy)
+            7 -> PuppetEngine.pointBoneTo("shinL", pose.angles, ux, uy)
+            else -> PuppetEngine.pointBoneTo("shinR", pose.angles, ux, uy)
+        }
+        // preservar bob/sway de la pose congelada (que el muñeco no salte)
+        customPose = Pose(newPose.angles, pose.bob, pose.sway)
         drawPreview()
     }
 
@@ -999,11 +1211,12 @@ class MainActivity : ComponentActivity() {
         return minOf(w, h) * 0.88f / 0.85f
     }
 
-    // Origen (ox, oy) del muñeco en pantalla (misma fórmula del SceneRenderer)
+    // Origen (ox, oy) del muñeco en pantalla (misma fórmula del SceneRenderer
+    // v0.5.1: respeta la posición libre del actor actorX/actorY)
     private fun puppetOrigin(pose: Pose): Pair<Float, Float> {
         val unit = puppetUnit()
-        val ox = lastCanvasW / 2f + pose.sway * unit
-        val oy = lastCanvasH * 0.55f + pose.bob * unit
+        val ox = lastCanvasW * actorX + pose.sway * unit
+        val oy = lastCanvasH * actorY + pose.bob * unit
         return Pair(ox, oy)
     }
 
@@ -1019,38 +1232,3 @@ class MainActivity : ComponentActivity() {
             animProgress = p; drawPreview()
             if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar" }
         }
-        frameClock = clock; clock.start()
-    }
-
-    // El export corre en el servicio en primer plano (anti-MIUI)
-    private fun triggerExportService(w: Int, h: Int) {
-        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        val bmp = photo!!
-        statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
-        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h, textX, textY, textSizePx)
-    }
-
-    private fun drawPreview() {
-        val holder = previewSurface?.holder ?: return
-        val canvas = holder.lockCanvas() ?: return
-        try {
-            lastCanvasW = canvas.width
-            lastCanvasH = canvas.height
-            SceneRenderer.renderScene(
-                canvas, canvas.width, canvas.height, animProgress,
-                backgroundPhoto, mesh, textOverlay,
-                template, templatePrev, blendFactor(),
-                drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
-                overridePose = customPose,   // MODO POSAR: la pose arrastrada manda
-                textX = textX, textY = textY, textSize = textSizePx
-            )
-        } finally { holder.unlockCanvasAndPost(canvas) }
-    }
-
-    override fun onDestroy() {
-        ttsManager?.stop()
-        super.onDestroy()
-    }
-}
-

@@ -277,13 +277,49 @@ object PuppetEngine {
         // ángulo de ANIMACIÓN = mundo − mundo del padre − reposo
         val parentPose = upper.parent?.let { solved[it] }
         val parentWorld = parentPose?.worldDeg ?: 0f
-        val animUpper = wrapDeg(angUpper - parentWorld - upper.restDeg)
-        val animFore = wrapDeg(angFore - angUpper - fore.restDeg)
+        // v0.5.1 (FASE A): LÍMITES ARTICULARES — el codo dobla solo hacia el
+        // cuerpo y la rodilla solo hacia atrás (sentidos VERIFICADOS en las
+        // plantillas walk/wave del propio rig: foreArmR=+20..58 en wave,
+        // shin=-32 en walk). Sin esto el IK doblaba codos/rodillas hacia
+        // delante: poses imposibles = la "desfiguración" del editor de poses.
+        val animUpper = clampJoint(upperName, wrapDeg(angUpper - parentWorld - upper.restDeg))
+        val animFore = clampJoint(foreName, wrapDeg(angFore - angUpper - fore.restDeg))
 
         val m = LinkedHashMap<String, Float>(angles)
         m[upperName] = animUpper
         m[foreName] = animFore
         return Pose(m, bob, sway)
+    }
+
+    // Rango fisiológico por hueso (grados de animación). El resto sin límite.
+    private fun clampJoint(bone: String, a: Float): Float {
+        return when (bone) {
+            "foreArmL" -> a.coerceIn(-150f, 5f)
+            "foreArmR" -> a.coerceIn(-5f, 150f)
+            "shinL", "shinR" -> a.coerceIn(-140f, 5f)
+            "thighL", "thighR" -> a.coerceIn(-60f, 60f)
+            else -> a
+        }
+    }
+
+    // v0.5.1 (FASE A): gira UN hueso (codo o rodilla en el editor de puntos)
+    // para que apunte al objetivo (ux, uy en unidades del muñeco) desde su
+    // articulación actual. Respeta los límites articulares. Es el "punto
+    // intermedio arrastrable" del editor: el dedo orienta el antebrazo o la
+    // espinilla sin mover el resto del cuerpo.
+    fun pointBoneTo(boneName: String, angles: Map<String, Float>, targetX: Float, targetY: Float): Pose {
+        val bone = PuppetRig.HUMANOID.bones.firstOrNull { it.name == boneName } ?: return Pose(angles, 0f, 0f)
+        val solved = PuppetRig.HUMANOID.solve(angles, 0f, 0f)
+        val bp = solved[boneName] ?: return Pose(angles, 0f, 0f)
+        val jx = bp.joint.x
+        val jy = bp.joint.y
+        if (kotlin.math.abs(targetX - jx) < 1e-4f && kotlin.math.abs(targetY - jy) < 1e-4f) return Pose(angles, 0f, 0f)
+        val worldTarget = angDeg(PointF(jx, jy), PointF(targetX, targetY))
+        val parentWorld = bone.parent?.let { solved[it]?.worldDeg } ?: 0f
+        val anim = clampJoint(boneName, wrapDeg(worldTarget - parentWorld - bone.restDeg))
+        val m = LinkedHashMap<String, Float>(angles)
+        m[boneName] = anim
+        return Pose(m, 0f, 0f)
     }
 
     // Ángulo de la dirección p0->p1 en la convención del rig (grados).

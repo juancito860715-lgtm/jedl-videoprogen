@@ -18,26 +18,24 @@ import java.nio.ByteOrder
 // DENTRO DEL APK (lo descarga el workflow de CI a assets/).
 // Funciona OFFLINE desde el primer uso: no necesita red.
 //
-// Categorías: 0 = FONDO, 1-5 = partes de la persona
-// (pelo, piel del cuerpo, piel de la cara, ropa, otros).
-//
-// FÓRMULA DE APLICACIÓN (Alpha Blending):
-//   conf_persona = 1 - confidence_mask_fondo[pixel]
-//   alpha_final  = conf_persona * 255
-//   Si alpha_final < 128  -> el píxel es FONDO -> transparente.
+// v0.5.1 (FASE A) — BORDE SUAVE (por reporte real del Redmi:
+// "el recorte funciona aunque no perfecto"):
+// 1. Alfa CONTINUO con smoothstep (antes era binario: píxel sí/no,
+//    por eso el borde salía duro y con dientes de sierra).
+// 2. CIERRE MORFOLÓGICO: un píxel rodeado por el cuerpo (>=5 de sus
+//    8 vecinos opacos) se vuelve cuerpo -> rellena agujeros pequeños
+//    de la máscara (bolsillos, entrepierna, pelo suelto).
+// 3. FEATHER: box blur separable de radio 2, 2 pasadas, SOLO al
+//    canal alfa -> borde difuminado 2-3 px que se funde con la escena.
+// Matemática pública (morfología + blur separable), cero librerías.
 //
 // API verificada en tasks-vision 0.10.14:
 //   - BaseOptions.builder().setModelAssetPath(...)
 //   - result.confidenceMasks() -> Optional<List<MPImage>>
 //   - ByteBufferExtractor.extract(MPImage) -> ByteBuffer
 //
-// REGLA DE FALLBACK (v0.4.8, ajuste por prueba real en Redmi
-// Note 10 de 4 GB): la IA es la VÍA PRINCIPAL, no la excepción.
-// El umbral de 200 ms de versiones anteriores era demasiado
-// estricto para 4 GB de RAM: la IA tardaba un poco más y la app
-// caía SIEMPRE al Chroma Key (por eso "solo quitaba el fondo
-// blanco"). Ahora el umbral de seguridad es amplio (5 s): solo
-// cae al Chroma Key si la IA falla de verdad.
+// REGLA DE FALLBACK (v0.4.8): la IA es la VÍA PRINCIPAL, no la
+// excepción (umbral de seguridad amplio: 5 s).
 // ============================================================
 object SubjectSegmenter {
 
@@ -92,16 +90,72 @@ object SubjectSegmenter {
             val h = bitmap.height
             val src = IntArray(w * h)
             bitmap.getPixels(src, 0, w, 0, 0, w, h)
-            val out = IntArray(w * h)
+            val n = w * h
+
+            // 1) ALFA CONTINUO: conf de persona 0..1 -> smoothstep entre
+            //    0.35 y 0.65 (rampa del borde en vez de umbral binario)
+            val alpha = IntArray(n)
             for (y in 0 until h) {
                 val my = (y * mh / h).coerceAtMost(mh - 1)
                 val row = my * mw
+                val dy = y * w
                 for (x in 0 until w) {
                     val mx = (x * mw / w).coerceAtMost(mw - 1)
-                    // alpha_final = (1 - conf_fondo) * 255; si < 128 es fondo
-                    val alpha = ((1f - fb.get(row + mx)) * 255f).toInt()
-                    if (alpha >= 128) out[y * w + x] = src[y * w + x]
+                    val conf = 1f - fb.get(row + mx)          // conf de PERSONA
+                    val t = ((conf - 0.35f) / 0.30f).coerceIn(0f, 1f)
+                    alpha[dy + x] = (t * t * (3f - 2f * t) * 255f).toInt()
                 }
+            }
+
+            // 2) CIERRE MORFOLÓGICO (1 pasada): píxel interior rodeado
+            //    de cuerpo -> cuerpo. Rellena agujeros de la máscara.
+            val solid = BooleanArray(n)
+            for (i in 0 until n) solid[i] = alpha[i] > 200
+            for (y in 1 until h - 1) {
+                for (x in 1 until w - 1) {
+                    val i = y * w + x
+                    if (solid[i]) continue
+                    var cnt = 0
+                    for (dyy in -1..1) for (dxx in -1..1) {
+                        if (dxx == 0 && dyy == 0) continue
+                        if (solid[(y + dyy) * w + (x + dxx)]) cnt++
+                    }
+                    if (cnt >= 5) alpha[i] = 255
+                }
+            }
+
+            // 3) FEATHER: box blur separable radio 2, 2 pasadas (solo alfa)
+            val tmp = IntArray(n)
+            for (pass in 0 until 2) {
+                for (y in 0 until h) {
+                    val row = y * w
+                    for (x in 0 until w) {
+                        var sum = 0; var cnt = 0
+                        for (d in -2..2) {
+                            val xx = x + d
+                            if (xx in 0 until w) { sum += alpha[row + xx]; cnt++ }
+                        }
+                        tmp[row + x] = sum / cnt
+                    }
+                }
+                for (x in 0 until w) {
+                    for (y in 0 until h) {
+                        var sum = 0; var cnt = 0
+                        for (d in -2..2) {
+                            val yy = y + d
+                            if (yy in 0 until h) { sum += tmp[yy * w + x]; cnt++ }
+                        }
+                        alpha[y * w + x] = sum / cnt
+                    }
+                }
+            }
+
+            // 4) componer: píxel original + alfa suavizado
+            val out = IntArray(n)
+            for (i in 0 until n) {
+                val a = alpha[i]
+                if (a <= 2) continue
+                out[i] = (src[i] and 0x00FFFFFF) or (a shl 24)
             }
             val elapsed = SystemClock.elapsedRealtime() - t0
             if (elapsed > MAX_IA_MS) null else Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)

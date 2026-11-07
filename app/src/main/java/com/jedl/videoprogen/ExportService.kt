@@ -69,7 +69,8 @@ class ExportService : Service() {
                 SceneRenderer.renderSceneToBitmap(
                     pendingBackground, pendingMesh, text, progress, pendingWidth, pendingHeight, pendingTemplate,
                     drawSkeleton = false,
-                    textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize
+                    textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize,
+                    actorX = pendingActorX, actorY = pendingActorY
                 )
             }
 
@@ -121,13 +122,17 @@ class ExportService : Service() {
         @Volatile var pendingTextX: Float = 0.5f
         @Volatile var pendingTextY: Float = 0.9f
         @Volatile var pendingTextSize: Float = 60f
+        // v0.5.1 (FASE A): posición libre del actor en la escena
+        @Volatile var pendingActorX: Float = 0.5f
+        @Volatile var pendingActorY: Float = 0.55f
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
             context: Context, photo: Bitmap, background: Bitmap?,
             mesh: SkinnedMesh?, text: String, template: ActiveTemplate,
             width: Int, height: Int,
-            textX: Float, textY: Float, textSize: Float
+            textX: Float, textY: Float, textSize: Float,
+            actorX: Float = 0.5f, actorY: Float = 0.55f
         ) {
             pendingPhoto = photo
             pendingBackground = background
@@ -139,6 +144,8 @@ class ExportService : Service() {
             pendingTextX = textX
             pendingTextY = textY
             pendingTextSize = textSize
+            pendingActorX = actorX
+            pendingActorY = actorY
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)

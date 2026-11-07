@@ -20,7 +20,8 @@ object SceneRenderer {
         template: ActiveTemplate, prevTemplate: ActiveTemplate, blend: Float,
         drawSkeleton: Boolean,
         overridePose: Pose? = null,
-        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
+        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
+        actorX: Float = 0.5f, actorY: Float = 0.55f
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
         canvas.drawColor(Color.BLACK)
@@ -44,8 +45,11 @@ object SceneRenderer {
             )
         }
         val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f   // píxeles por unidad de muñeco
-        val ox = w / 2f + pose.sway * unit
-        val oy = h * 0.55f + pose.bob * unit
+        // v0.5.1 (FASE A): el actor se COLOCA donde el usuario arrastró
+        // (actorX/actorY en proporción del lienzo). Preview y export usan
+        // esta MISMA posición: el MP4 queda idéntico a la pantalla.
+        val ox = w * actorX + pose.sway * unit
+        val oy = h * actorY + pose.bob * unit
         val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
 
         canvas.save()
@@ -94,10 +98,11 @@ object SceneRenderer {
         background: Bitmap?, mesh: SkinnedMesh?, text: String,
         progress: Float, w: Int, h: Int, template: ActiveTemplate, drawSkeleton: Boolean,
         overridePose: Pose? = null,
-        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f
+        textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
+        actorX: Float = 0.5f, actorY: Float = 0.55f
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, overridePose, textX, textY, textSize)
+        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, overridePose, textX, textY, textSize, actorX, actorY)
         return out
     }
 }
