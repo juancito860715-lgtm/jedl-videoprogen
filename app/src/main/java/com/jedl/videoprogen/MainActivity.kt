@@ -1232,3 +1232,101 @@ class MainActivity : ComponentActivity() {
             animProgress = p; drawPreview()
             if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar" }
         }
+
+        frameClock = clock; clock.start()
+    }
+
+    // El export corre en el servicio en primer plano (anti-MIUI)
+    private fun triggerExportService(w: Int, h: Int) {
+        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
+        val bmp = photo!!
+        statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
+        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
+        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h, textX, textY, textSizePx, actorX, actorY)
+    }
+
+    private fun drawPreview() {
+        val holder = previewSurface?.holder ?: return
+        val canvas = holder.lockCanvas() ?: return
+        try {
+            lastCanvasW = canvas.width
+            lastCanvasH = canvas.height
+            // v0.5.1 (FASE A): ZOOM de precisión en modo posar. El canvas
+            // se escala alrededor del origen del muñeco y los 8 puntos
+            // se dibujan DESPUÉS del restore, compensados a pantalla.
+            val zoomIn = poseMode && poseZoom > 1f && customPose != null
+            if (zoomIn) {
+                val pivot = puppetOrigin(customPose!!)
+                canvas.save()
+                canvas.scale(poseZoom, poseZoom, pivot.first, pivot.second)
+                SceneRenderer.renderScene(
+                    canvas, canvas.width, canvas.height, animProgress,
+                    backgroundPhoto, mesh, textOverlay,
+                    template, templatePrev, blendFactor(),
+                    drawSkeleton = false,
+                    overridePose = customPose,
+                    textX = textX, textY = textY, textSize = textSizePx,
+                    actorX = actorX, actorY = actorY
+                )
+                canvas.restore()
+            } else {
+                SceneRenderer.renderScene(
+                    canvas, canvas.width, canvas.height, animProgress,
+                    backgroundPhoto, mesh, textOverlay,
+                    template, templatePrev, blendFactor(),
+                    drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
+                    overridePose = customPose,   // MODO POSAR: la pose arrastrada manda
+                    textX = textX, textY = textY, textSize = textSizePx,
+                    actorX = actorX, actorY = actorY
+                )
+            }
+            if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)
+        } finally { holder.unlockCanvasAndPost(canvas) }
+    }
+
+    // Los 8 PUNTOS DORADOS arrastrables del modo posar (pedido del dueño:
+    // ver y ajustar punto por punto). 1-4 = manos/pies (IK), 5-8 =
+    // codos/rodillas (orientan el hueso inferior). El punto ACTIVO se
+    // pinta naranja. El radio crece con el zoom para seguir siendo
+    // agarrable con el dedo.
+    private fun drawPoseHandles(canvas: android.graphics.Canvas, pose: Pose) {
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        val bones = listOf("foreArmL", "foreArmR", "shinL", "shinR")
+        val rBig = unit * 0.05f * poseZoom
+        val rSmall = unit * 0.035f * poseZoom
+        // tips primero (ids 1-4), joints después (ids 5-8) — mismo orden
+        // que selectLimb para que el punto activo coincida siempre
+        for ((idx, bone) in bones.withIndex()) {
+            val id = 1 + idx
+            val t = solved[bone]?.tip ?: continue
+            val p = toScreen(origin.first + t.x * unit, origin.second + t.y * unit, origin.first, origin.second)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = if (activeLimb == id) 0xFFFF5722.toInt() else 0xFFFFC107.toInt()
+            canvas.drawCircle(p.first, p.second, rBig, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.color = 0xFF212121.toInt()
+            paint.strokeWidth = 2f
+            canvas.drawCircle(p.first, p.second, rBig, paint)
+        }
+        for ((idx, bone) in bones.withIndex()) {
+            val id = 5 + idx
+            val j = solved[bone]?.joint ?: continue
+            val p = toScreen(origin.first + j.x * unit, origin.second + j.y * unit, origin.first, origin.second)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = if (activeLimb == id) 0xFFFF5722.toInt() else 0xFFFFC107.toInt()
+            canvas.drawCircle(p.first, p.second, rSmall, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.color = 0xFF212121.toInt()
+            paint.strokeWidth = 2f
+            canvas.drawCircle(p.first, p.second, rSmall, paint)
+        }
+    }
+
+    override fun onDestroy() {
+        ttsManager?.stop()
+        super.onDestroy()
+    }
+}
