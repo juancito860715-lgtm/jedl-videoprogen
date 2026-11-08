@@ -2,261 +2,322 @@ package com.jedl.videoprogen
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import kotlin.math.hypot
 
 // ============================================================
-// FASE B — RENDER DEL PERSONAJE POR PIEZAS (v0.6.0)
+// F1 — RENDER DEL AVATAR POR PIEZAS (v0.7.0-f1)
 // ============================================================
-// Dibuja el avatar (AvatarSpec) sobre las ARTICULACIONES RESUELTAS
-// del rig existente (PuppetRig.HUMANOID.solve). Cada pieza es una
-// cápsula (línea con extremos redondeados) o un círculo entre
-// joint y tip del hueso correspondiente:
-//   - piernas: thigh joint -> shin joint -> shin tip (+ zapato)
-//   - torso:  cadera (raíz) -> cuello (tip del torso)
-//   - brazos: hombro -> codo -> mano (+ manga de la camiseta)
-//   - cabeza: centro a 0.098 unidades SOBRE el cuello, en dirección
-//     CONTRARIA al hueso head (el hueso apunta hacia abajo desde
-//     el cuello: girarlo tumba la cabeza y la cara lo sigue).
-// Convención del rig: 0 grados = abajo, 180 = arriba, positivo =
-// horario en pantalla; y crece hacia abajo.
+// Cada pieza es ARTE PRE-DIBUJADO (vectorial en F1; PNG con
+// manifest en F2+) colgado de la MATRIZ de su hueso: se dibuja
+// en el espacio local del hueso (pivote = articulación) y SOLAPA
+// hacia la pieza madre, así las articulaciones NUNCA se separan.
+// La cápsula rígida de v0.6.0 queda eliminada.
 //
-// Cara: DIBUJADA (ojos/cejas/boca planos) o la CARA RECORTADA DE LA
-// FOTO (FaceCutter) montada en la cabeza con recorte circular y el
-// alfa suave del recorte fundiéndose con el círculo de piel.
+// CONTRATOS CONGELADOS (F1):
+//  * firma draw(canvas, solved, spec, face, direction) intacta
+//  * orden de dibujo: pieza de cabeza -> cara (espacio del hueso)
+//  * matriz del hueso = espacio de ESCENA (export = preview)
 //
-// Direcciones (pedido del dueño: ver todas al caminar):
-//   "der"    perfil derecho (dibujo normal)
-//   "izq"    perfil izquierdo = ESPEJO (el caller hace scale(-1,1))
-//   "frente" de frente (sin espejo; los ángulos los ajusta
-//            PuppetEngine.applyDirection)
-//   "espalda" de espaldas: pelo de la nuca, SIN cara
-//   "3/4"    diagonal aproximada (torso/cabeza girados unos grados)
+// Correcciones de v0.6.0 incorporadas de raíz:
+//  * head: la pieza cuelga de la matriz del hueso head, que apunta
+//    del cuello HACIA ARRIBA (el renderer viejo asumía lo
+//    contrario y dibujaba la cabeza dentro del torso).
+//  * hombros cubiertos: semiancho de camiseta 0.13 >= rig 0.10.
 // ============================================================
 object AvatarRenderer {
 
-    // Radio de la cabeza (unidades del muñeco)
-    private const val HEAD_R = 0.085f
-    // Distancia cuello -> centro de la cabeza (unidades)
-    private const val NECK_TO_CENTER = 0.098f
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val mTmp = Matrix()
 
+    private const val FACE_LINE = 0xFF262626.toInt()
+
+    private fun darker(argb: Int): Int {
+        val a = (argb ushr 24) and 0xFF
+        val r = ((argb ushr 16) and 0xFF) * 3 / 4
+        val g = ((argb ushr 8) and 0xFF) * 3 / 4
+        val b = (argb and 0xFF) * 3 / 4
+        return (a shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    // ---------- API (firma congelada) ----------
     fun draw(
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
-        val torso = solved["torso"] ?: return
-        val head = solved["head"] ?: return
-        val armUL = solved["armUL"]; val foreArmL = solved["foreArmL"]
-        val armUR = solved["armUR"]; val foreArmR = solved["foreArmR"]
-        val thighL = solved["thighL"]; val shinL = solved["shinL"]
-        val thighR = solved["thighR"]; val shinR = solved["shinR"]
+        // Piezas PNG del banco (F2+): si hay manifest, mandan.
+        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) return
 
-        // 1) PIERNAS (detrás de todo)
-        if (thighL != null && shinL != null) drawLeg(canvas, thighL, shinL, spec)
-        if (thighR != null && shinR != null) drawLeg(canvas, thighR, shinR, spec)
-
-        // 2) TORSO: camiseta + cadera del pantalón
-        capsule(canvas, torso.joint.x, torso.joint.y, torso.tip.x, torso.tip.y, 0.150f, spec.shirt)
-        capsule(canvas, torso.joint.x, torso.joint.y + 0.012f, torso.joint.x, torso.joint.y + 0.070f, 0.156f, spec.pants)
-
-        // 3) BRAZOS (encima del torso)
-        if (armUL != null && foreArmL != null) drawArm(canvas, armUL, foreArmL, spec)
-        if (armUR != null && foreArmR != null) drawArm(canvas, armUR, foreArmR, spec)
-
-        // 4) CUELLO + CABEZA
-        drawHead(canvas, head, torso, spec, face, direction)
+        // Piezas vectoriales del estilo base F1 (validadas visualmente).
+        bone(canvas, solved, "armUR") { upperArm(it, spec) }
+        bone(canvas, solved, "foreArmR") { foreArm(it, spec) }
+        bone(canvas, solved, "thighR") { thigh(it, spec) }
+        bone(canvas, solved, "shinR") { c -> shin(c, spec) }
+        bone(canvas, solved, "torso") { torso(it, spec) }
+        bone(canvas, solved, "thighL") { thigh(it, spec) }
+        bone(canvas, solved, "shinL") { c -> shin(c, spec) }
+        bone(canvas, solved, "head") { c -> head(c, spec, face, direction) }
+        bone(canvas, solved, "armUL") { upperArm(it, spec) }
+        bone(canvas, solved, "foreArmL") { foreArm(it, spec) }
     }
 
-    // ---------- PIEZAS ----------
-
-    private fun drawLeg(canvas: Canvas, thigh: BonePose, shin: BonePose, spec: AvatarSpec) {
-        // muslo y espinilla del mismo color (pantalón largo)
-        capsule(canvas, thigh.joint.x, thigh.joint.y, shin.joint.x, shin.joint.y, 0.068f, spec.pants)
-        capsule(canvas, shin.joint.x, shin.joint.y, shin.tip.x, shin.tip.y, 0.054f, spec.pants)
-        // zapato: círculo en el tobillo + puntera corta hacia el pie
-        circle(canvas, shin.tip.x, shin.tip.y, 0.034f, spec.shoes)
-        val fx = shin.tip.x + (shin.tip.x - shin.joint.x) * 0.10f
-        val fy = shin.tip.y + 0.016f
-        capsule(canvas, shin.tip.x, shin.tip.y, fx, fy, 0.052f, spec.shoes)
-    }
-
-    private fun drawArm(canvas: Canvas, upper: BonePose, fore: BonePose, spec: AvatarSpec) {
-        // brazo completo en piel
-        capsule(canvas, upper.joint.x, upper.joint.y, fore.joint.x, fore.joint.y, 0.054f, spec.skin)
-        capsule(canvas, fore.joint.x, fore.joint.y, fore.tip.x, fore.tip.y, 0.046f, spec.skin)
-        // manga corta de la camiseta (primer tramo del hombro)
-        val sx = upper.joint.x + (fore.joint.x - upper.joint.x) * 0.45f
-        val sy = upper.joint.y + (fore.joint.y - upper.joint.y) * 0.45f
-        capsule(canvas, upper.joint.x, upper.joint.y, sx, sy, 0.062f, spec.shirt)
-        // mano
-        circle(canvas, fore.tip.x, fore.tip.y, 0.032f, spec.skin)
-    }
-
-    private fun drawHead(
-        canvas: Canvas, head: BonePose, torso: BonePose,
-        spec: AvatarSpec, face: Bitmap?, direction: String
+    private inline fun bone(
+        canvas: Canvas, solved: Map<String, BonePose>,
+        name: String, block: (Canvas) -> Unit
     ) {
-        // centro de la cabeza: sobre el cuello, dirección contraria al
-        // hueso head (que apunta hacia abajo desde el cuello)
-        val len = hypot(head.tip.x - head.joint.x, head.tip.y - head.joint.y)
-        val k = if (len > 1e-5f) NECK_TO_CENTER / len else 0.85f
-        val cx = head.joint.x + (head.joint.x - head.tip.x) * k
-        val cy = head.joint.y + (head.joint.y - head.tip.y) * k
-        // inclinación de la cabeza (para que la cara siga al hueso):
-        // worldDeg neutro del head = 180 (torso 180 + reposo 0)
-        val tiltDeg = head.worldDeg - 180f
-
-        // cuello (del tip del torso hacia el centro de la cabeza)
-        capsule(canvas, torso.tip.x, torso.tip.y, cx, cy, 0.030f, spec.skin)
-
-        // círculo de piel
-        circle(canvas, cx, cy, HEAD_R, spec.skin)
-
+        val bp = solved[name] ?: return
         val save = canvas.save()
-        canvas.rotate(tiltDeg, cx, cy)
-
-        if (direction == "espalda") {
-            // DE ESPALDAS: nuca de pelo, sin cara
-            drawHairBack(canvas, cx, cy, spec)
-        } else {
-            drawHair(canvas, cx, cy, spec, direction)
-            if (face != null) {
-                drawFaceFromPhoto(canvas, cx, cy, face)
-            } else {
-                drawFaceDrawn(canvas, cx, cy, spec)
-            }
-        }
+        canvas.concat(bp.matrix)   // espacio local del hueso (pivote = articulación)
+        block(canvas)
         canvas.restoreToCount(save)
     }
 
-    // ---------- CABELLO (estilos) ----------
+    // ---------- PIEZAS VECTORIALES (espacio local de cada hueso) ----------
 
-    private fun drawHair(canvas: Canvas, cx: Float, cy: Float, spec: AvatarSpec, direction: String) {
-        val r = HEAD_R
+    private fun limb(c: Canvas, y0: Float, y1: Float, w: Float, color: Int) {
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = w + 0.008f; p.color = darker(color)
+        c.drawLine(0f, y0, 0f, y1, p)
+        p.strokeWidth = w; p.color = color
+        c.drawLine(0f, y0, 0f, y1, p)
+    }
+
+    private fun circle(c: Canvas, x: Float, y: Float, r: Float, fill: Int) {
+        p.style = Paint.Style.FILL; p.color = fill
+        c.drawCircle(x, y, r, p)
+    }
+
+    private fun circle(c: Canvas, x: Float, y: Float, r: Float, fill: Int, stroke: Int, sw: Float) {
+        p.style = Paint.Style.FILL; p.color = fill
+        c.drawCircle(x, y, r, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = sw; p.color = stroke
+        c.drawCircle(x, y, r, p)
+    }
+
+    private fun fillStroke(c: Canvas, path: Path, fill: Int, stroke: Int, sw: Float) {
+        p.style = Paint.Style.FILL; p.color = fill
+        c.drawPath(path, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = sw; p.color = stroke
+        c.drawPath(path, p)
+    }
+
+    private fun upperArm(c: Canvas, spec: AvatarSpec) {
+        limb(c, -0.012f, 0.150f, 0.054f, spec.skin)          // brazo en piel
+        // manga (camiseta), solapa el hombro
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = 0.074f; p.color = darker(spec.shirt)
+        c.drawLine(0f, -0.018f, 0f, 0.058f, p)
+        p.strokeWidth = 0.066f; p.color = spec.shirt
+        c.drawLine(0f, -0.018f, 0f, 0.058f, p)
+    }
+
+    private fun foreArm(c: Canvas, spec: AvatarSpec) {
+        limb(c, -0.010f, 0.136f, 0.046f, spec.skin)          // antebrazo
+        circle(c, 0f, 0.146f, 0.030f, darker(spec.skin))     // mano (borde)
+        circle(c, 0f, 0.146f, 0.026f, spec.skin)
+    }
+
+    private fun thigh(c: Canvas, spec: AvatarSpec) {
+        // sobresale -0.042 hacia la cadera: solapa el pantalón
+        limb(c, -0.042f, 0.196f, 0.074f, spec.pants)
+    }
+
+    private fun shin(c: Canvas, spec: AvatarSpec) {
+        limb(c, -0.010f, 0.176f, 0.062f, spec.pants)
+        // zapato
+        val shoe = Path().apply {
+            moveTo(-0.030f, 0.150f)
+            lineTo(-0.037f, 0.186f)
+            lineTo(0.062f, 0.186f)
+            quadTo(0.086f, 0.177f, 0.060f, 0.152f)
+            close()
+        }
+        fillStroke(c, shoe, spec.shoes, darker(spec.shoes), 0.005f)
+    }
+
+    private fun torso(c: Canvas, spec: AvatarSpec) {
+        // pelvis (pantalón) BAJO la camiseta
+        val pelvis = Path().apply {
+            moveTo(-0.105f, 0.065f)
+            cubicTo(-0.112f, 0.020f, -0.112f, -0.030f, -0.098f, -0.052f)
+            cubicTo(-0.050f, -0.068f, 0.050f, -0.068f, 0.098f, -0.052f)
+            cubicTo(0.112f, -0.030f, 0.112f, 0.020f, 0.105f, 0.065f)
+            cubicTo(0.060f, 0.085f, -0.060f, 0.085f, -0.105f, 0.065f)
+            close()
+        }
+        fillStroke(c, pelvis, spec.pants, darker(spec.pants), 0.006f)
+        // camiseta: cubre hombros ±0.10 (semiancho 0.13), dobladillo sobre el pantalón
+        val shirt = Path().apply {
+            moveTo(-0.100f, 0.030f)
+            cubicTo(-0.108f, 0.120f, -0.100f, 0.160f, -0.118f, 0.220f)
+            cubicTo(-0.130f, 0.245f, -0.130f, 0.272f, -0.112f, 0.292f)
+            cubicTo(-0.060f, 0.315f, -0.020f, 0.318f, 0.0f, 0.318f)
+            cubicTo(0.020f, 0.318f, 0.060f, 0.315f, 0.112f, 0.292f)
+            cubicTo(0.130f, 0.272f, 0.130f, 0.245f, 0.118f, 0.220f)
+            cubicTo(0.100f, 0.160f, 0.108f, 0.120f, 0.100f, 0.030f)
+            cubicTo(0.060f, 0.012f, -0.060f, 0.012f, -0.100f, 0.030f)
+            close()
+        }
+        fillStroke(c, shirt, spec.shirt, darker(spec.shirt), 0.006f)
+    }
+
+    // ---------- CABEZA (espacio local del hueso head: pivote=cuello, +y ARRIBA) ----------
+
+    private fun head(c: Canvas, spec: AvatarSpec, face: Bitmap?, direction: String) {
+        // piel: centro a 0.115 del cuello (la punta del hueso head)
+        circle(c, 0f, 0.115f, 0.088f, spec.skin, darker(spec.skin), 0.005f)
+        if (direction == "espalda") {
+            // nuca: pelo cubriendo casi toda la cabeza, SIN cara
+            if (spec.hairStyle != 3) circle(c, 0f, 0.112f, 0.092f, spec.hair)
+            return
+        }
+        // oreja (perfil)
+        circle(c, -0.028f, 0.115f, 0.016f, darker(spec.skin), darker(spec.skin), 0.004f)
+        // la cara SIEMPRE después de la pieza de piel y en el mismo espacio local
+        if (face != null) faceFromPhoto(c, face) else faceDrawn(c, spec, direction)
+        hair(c, spec, direction)
+    }
+
+    private fun faceDrawn(c: Canvas, spec: AvatarSpec, direction: String) {
+        p.style = Paint.Style.FILL; p.color = FACE_LINE
+        if (direction == "frente") {
+            c.drawCircle(-0.030f, 0.128f, 0.009f, p)
+            c.drawCircle(0.030f, 0.128f, 0.009f, p)
+            strokePath(c, FACE_LINE, 0.004f, Path().apply {
+                moveTo(-0.020f, 0.085f); quadTo(0.0f, 0.102f, 0.020f, 0.085f)
+            })
+            if (spec.beard) beard(c, spec, true)
+        } else {
+            c.drawCircle(0.030f, 0.128f, 0.009f, p)                       // ojo
+            strokePath(c, FACE_LINE, 0.004f, Path().apply {                // ceja
+                moveTo(0.014f, 0.142f); quadTo(0.030f, 0.148f, 0.046f, 0.139f)
+            })
+            strokePath(c, FACE_LINE, 0.004f, Path().apply {                // sonrisa
+                moveTo(0.020f, 0.082f); quadTo(0.040f, 0.094f, 0.058f, 0.077f)
+            })
+            strokePath(c, darker(spec.skin), 0.004f, Path().apply {       // nariz
+                moveTo(0.082f, 0.118f); quadTo(0.095f, 0.110f, 0.087f, 0.096f)
+            })
+            if (spec.beard) beard(c, spec, false)
+        }
+    }
+
+    private fun beard(c: Canvas, spec: AvatarSpec, front: Boolean) {
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = 0.026f; p.color = spec.hair
+        if (front) c.drawLine(-0.030f, 0.062f, 0.030f, 0.062f, p)
+        else c.drawLine(0.014f, 0.068f, 0.038f, 0.052f, p)
+    }
+
+    private fun strokePath(c: Canvas, color: Int, w: Float, path: Path) {
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
+        p.strokeWidth = w; p.color = color
+        c.drawPath(path, p)
+    }
+
+    // Cara recortada de la foto (FaceCutter), montada EN el espacio local del hueso.
+    private fun faceFromPhoto(c: Canvas, face: Bitmap) {
+        val r = 0.072f
+        val save = c.save()
+        c.clipPath(Path().apply { addCircle(0f, 0.115f, r, Path.Direction.CCW) })
+        val side = r * 2f
+        val s = maxOf(side / face.width.toFloat(), side / face.height.toFloat())
+        val w = face.width * s
+        val h = face.height * s
+        p.alpha = 235
+        c.drawBitmap(face, null, RectF(-w / 2f, 0.115f - h / 2f, w / 2f, 0.115f + h / 2f), p)
+        p.alpha = 255
+        c.restoreToCount(save)
+    }
+
+    private fun hair(c: Canvas, spec: AvatarSpec, direction: String) {
         when (spec.hairStyle) {
-            0 -> { // corto: casquete superior
-                val p = Paint(Paint.ANTI_ALIAS_FLAG)
-                p.color = spec.hair
-                p.style = Paint.Style.FILL
-                canvas.drawArc(RectF(cx - r * 1.02f, cy - r * 1.02f, cx + r * 1.02f, cy + r * 1.02f), 180f, 130f, true, p)
+            0 -> strokePath(c, spec.hair, 0.030f, Path().apply {          // corto
+                moveTo(-0.080f, 0.158f); quadTo(-0.040f, 0.212f, 0.030f, 0.200f)
+            })
+            1 -> {                                                        // afro
+                circle(c, -0.015f, 0.215f, 0.052f, spec.hair)
+                circle(c, -0.075f, 0.130f, 0.030f, spec.hair)
+                circle(c, 0.045f, 0.190f, 0.026f, spec.hair)
             }
-            1 -> { // afro: bola grande arriba + laterales
-                circle(canvas, cx, cy - r * 0.72f, r * 0.78f, spec.hair)
-                circle(canvas, cx - r * 0.82f, cy - r * 0.28f, r * 0.42f, spec.hair)
-                circle(canvas, cx + r * 0.82f, cy - r * 0.28f, r * 0.42f, spec.hair)
-            }
-            2 -> { // gorra a juego con la camiseta + pelo asomando
-                val p = Paint(Paint.ANTI_ALIAS_FLAG)
-                p.color = spec.hair
-                p.style = Paint.Style.FILL
-                canvas.drawArc(RectF(cx - r * 1.02f, cy - r * 1.02f, cx + r * 1.02f, cy + r * 1.02f), 180f, 130f, true, p)
-                val cap = Paint(Paint.ANTI_ALIAS_FLAG)
-                cap.color = spec.shirt
-                cap.style = Paint.Style.FILL
-                canvas.drawArc(RectF(cx - r * 1.06f, cy - r * 1.10f, cx + r * 1.06f, cy + r * 0.05f), 180f, 180f, true, cap)
-                // visera hacia la derecha de pantalla (se espeja solita en "izq")
-                if (direction != "frente") {
-                    capsule(canvas, cx + r * 0.10f, cy - r * 0.42f, cx + r * 1.18f, cy - r * 0.30f, 0.030f, spec.shirt)
+            2 -> {                                                        // gorra a juego
+                val dome = Path().apply {
+                    addArc(RectF(-0.089f, 0.057f, 0.089f, 0.235f), 180f, 180f)
+                    close()
+                }
+                fillStroke(c, dome, spec.shirt, darker(spec.shirt), 0.004f)
+                if (direction == "frente") {
+                    strokePath(c, spec.shirt, 0.022f, Path().apply {
+                        moveTo(-0.085f, 0.150f); lineTo(0.085f, 0.150f)
+                    })
                 } else {
-                    // de frente la visera se ve de frente: franja corta
-                    capsule(canvas, cx - r * 0.9f, cy - r * 0.38f, cx + r * 0.9f, cy - r * 0.38f, 0.026f, spec.shirt)
+                    val visor = Path().apply {
+                        moveTo(0.040f, 0.150f); lineTo(0.165f, 0.140f)
+                        quadTo(0.176f, 0.136f, 0.162f, 0.126f)
+                        lineTo(0.040f, 0.130f); close()
+                    }
+                    fillStroke(c, visor, spec.shirt, darker(spec.shirt), 0.004f)
                 }
             }
-            3 -> { // calvo: nada (solo piel)
+            3 -> { }                                                      // calvo
+            else -> {                                                     // largo
+                strokePath(c, spec.hair, 0.034f, Path().apply {
+                    moveTo(-0.080f, 0.160f); quadTo(-0.040f, 0.212f, 0.030f, 0.200f)
+                })
+                strokePath(c, spec.hair, 0.036f, Path().apply {
+                    moveTo(-0.080f, 0.130f); lineTo(-0.086f, 0.010f)
+                })
+                strokePath(c, spec.hair, 0.030f, Path().apply {
+                    moveTo(-0.045f, 0.175f); lineTo(-0.052f, -0.005f)
+                })
             }
-            else -> { // largo: casquete + mechones a los lados
-                val p = Paint(Paint.ANTI_ALIAS_FLAG)
-                p.color = spec.hair
-                p.style = Paint.Style.FILL
-                canvas.drawArc(RectF(cx - r * 1.04f, cy - r * 1.04f, cx + r * 1.04f, cy + r * 1.04f), 180f, 180f, true, p)
-                capsule(canvas, cx - r * 0.95f, cy - r * 0.30f, cx - r * 0.95f, cy + r * 0.85f, 0.052f, spec.hair)
-                capsule(canvas, cx + r * 0.95f, cy - r * 0.30f, cx + r * 0.95f, cy + r * 0.85f, 0.052f, spec.hair)
-            }
         }
     }
 
-    private fun drawHairBack(canvas: Canvas, cx: Float, cy: Float, spec: AvatarSpec) {
-        // nuca: pelo cubriendo casi toda la cabeza
-        val r = HEAD_R
-        if (spec.hairStyle == 3) { circle(canvas, cx, cy, HEAD_R + 0.002f, spec.skin); return }
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = spec.hair
-        p.style = Paint.Style.FILL
-        canvas.drawArc(RectF(cx - r * 1.05f, cy - r * 1.05f, cx + r * 1.05f, cy + r * 1.05f), 90f, 240f, true, p)
-        if (spec.hairStyle == 1) { // afro: bola completa detrás
-            circle(canvas, cx, cy - r * 0.55f, r * 0.85f, spec.hair)
+    // ---------- PIEZAS PNG DEL BANCO (F2+: manifest congelado de PieceSet) ----------
+
+    private fun drawBitmapPieces(
+        canvas: Canvas, solved: Map<String, BonePose>, spec: AvatarSpec
+    ): Boolean {
+        val order = listOf(
+            "armUR", "foreArmR", "thighR", "shinR", "torso",
+            "thighL", "shinL", "head", "armUL", "foreArmL"
+        )
+        for (b in order) {
+            val def = PieceLibrary.piece(b) ?: return false
+            val bmp = PieceLibrary.bitmap(def) ?: return false
+            val bp = solved[b] ?: return false
+            val save = canvas.save()
+            canvas.concat(bp.matrix)
+            val s = def.widthUnits / bmp.width
+            mTmp.reset()
+            mTmp.postTranslate(-def.pivotX, -def.pivotY)
+            mTmp.postScale(s, s)
+            p.colorFilter = tintFilter(spec, def.tint)
+            canvas.drawBitmap(bmp, mTmp, p)
+            p.colorFilter = null
+            canvas.restoreToCount(save)
         }
-        if (spec.hairStyle == 4) { // largo: melena baja
-            capsule(canvas, cx - r * 0.95f, cy - r * 0.30f, cx - r * 0.95f, cy + r * 0.95f, 0.055f, spec.hair)
-            capsule(canvas, cx + r * 0.95f, cy - r * 0.30f, cx + r * 0.95f, cy + r * 0.95f, 0.055f, spec.hair)
+        return true
+    }
+
+    private fun tintFilter(spec: AvatarSpec, tint: String): ColorMatrixColorFilter? {
+        val argb = when (tint) {
+            "skin" -> spec.skin; "hair" -> spec.hair; "shirt" -> spec.shirt
+            "pants" -> spec.pants; "shoes" -> spec.shoes; else -> return null
         }
-    }
-
-    // ---------- CARA ----------
-
-    // Cara dibujada (estilo flat: ojos de punto, cejas, sonrisa)
-    private fun drawFaceDrawn(canvas: Canvas, cx: Float, cy: Float, spec: AvatarSpec) {
-        val r = HEAD_R
-        // cejas
-        val brow = Paint(Paint.ANTI_ALIAS_FLAG)
-        brow.color = spec.hair
-        brow.style = Paint.Style.STROKE
-        brow.strokeCap = Paint.Cap.ROUND
-        brow.strokeWidth = 0.012f
-        canvas.drawLine(cx - r * 0.55f, cy - r * 0.28f, cx - r * 0.20f, cy - r * 0.32f, brow)
-        canvas.drawLine(cx + r * 0.20f, cy - r * 0.32f, cx + r * 0.55f, cy - r * 0.28f, brow)
-        // ojos
-        val eye = Paint(Paint.ANTI_ALIAS_FLAG)
-        eye.color = 0xFF212121.toInt()
-        eye.style = Paint.Style.FILL
-        canvas.drawCircle(cx - r * 0.38f, cy - r * 0.06f, r * 0.10f, eye)
-        canvas.drawCircle(cx + r * 0.38f, cy - r * 0.06f, r * 0.10f, eye)
-        // sonrisa
-        val mouth = Paint(Paint.ANTI_ALIAS_FLAG)
-        mouth.color = 0xFF212121.toInt()
-        mouth.style = Paint.Style.STROKE
-        mouth.strokeCap = Paint.Cap.ROUND
-        mouth.strokeWidth = 0.014f
-        canvas.drawArc(RectF(cx - r * 0.42f, cy + r * 0.08f, cx + r * 0.42f, cy + r * 0.60f), 25f, 130f, false, mouth)
-        // barba/bigote opcional
-        if (spec.beard) {
-            val bp = Paint(Paint.ANTI_ALIAS_FLAG)
-            bp.color = spec.hair
-            bp.style = Paint.Style.FILL
-            canvas.drawArc(RectF(cx - r * 0.62f, cy + r * 0.02f, cx + r * 0.62f, cy + r * 0.95f), 55f, 70f, true, bp)
-        }
-    }
-
-    // Cara de la foto: montada con recorte circular (el alfa suave del
-    // recorte elíptico del FaceCutter se funde con el círculo de piel)
-    private fun drawFaceFromPhoto(canvas: Canvas, cx: Float, cy: Float, face: Bitmap) {
-        val rf = HEAD_R * 0.97f
-        val clip = Path()
-        clip.addCircle(cx, cy, rf, Path.Direction.CCW)
-        val save = canvas.save()
-        canvas.clipPath(clip)
-        val bp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        canvas.drawBitmap(face, null, RectF(cx - rf, cy - rf, cx + rf, cy + rf), bp)
-        canvas.restoreToCount(save)
-    }
-
-    // ---------- PRIMITIVAS ----------
-
-    private fun capsule(canvas: Canvas, x0: Float, y0: Float, x1: Float, y1: Float, width: Float, color: Int) {
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = color
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = width
-        p.strokeCap = Paint.Cap.ROUND
-        canvas.drawLine(x0, y0, x1, y1, p)
-    }
-
-    private fun circle(canvas: Canvas, x: Float, y: Float, radius: Float, color: Int) {
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        p.color = color
-        p.style = Paint.Style.FILL
-        canvas.drawCircle(x, y, radius, p)
+        val r = ((argb ushr 16) and 0xFF) / 255f
+        val g = ((argb ushr 8) and 0xFF) / 255f
+        val bl = (argb and 0xFF) / 255f
+        return ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+            r, 0f, 0f, 0f, 0f,
+            0f, g, 0f, 0f, 0f,
+            0f, 0f, bl, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )))
     }
 }
