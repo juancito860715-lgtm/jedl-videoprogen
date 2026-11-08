@@ -29,6 +29,14 @@ import kotlin.math.sin
 //    FABRIK (algoritmo público, tutorial oficial Khronos/Vulkan
 //    y SkeletonModification2DFABRIK de Godot), el sello de
 //    Chroma Toons.
+//
+// NOVEDADES v0.6.0 (FASE B): 5 PLANTILLAS NUEVAS (percusión,
+// correr, saltar, bailar, celebrar — 8 en total) y las
+// DIRECCIONES del caminar/correr (perfil derecha/espalda/frente/
+// 3/4; el perfil izquierdo es ESPEJO en el renderer).
+// Convención VERIFICADA contra walk/wave existentes: 0=abajo,
+// 180=arriba, positivo=horario; los límites articulares de
+// clampJoint() se respetan en TODAS las fórmulas.
 // ============================================================
 
 // Un hueso del muñeco: va de su articulación (origen local) a su punta.
@@ -156,6 +164,91 @@ object PuppetEngine {
                 bob = 0.010f * (1f - max(stepL, stepR))   // rebote al apoyar el pie
                 sway = 0.012f * sin(c)                    // balanceo de cadera
             }
+            // v0.6.0 (FASE B): 5 PLANTILLAS NUEVAS. Signos VERIFICADOS contra
+            // walk/wave: brazo izquierdo arriba = ángulo POSITIVO (espejo del
+            // derecho), rodillas solo negativas, codos dentro de clampJoint.
+            "drum" -> {  // PERCUSIÓN: manos golpeando alternadas al ritmo
+                val beat = t * 4f                         // 4 tiempos por clip
+                val bL = max(0f, sin(beat))
+                val bR = max(0f, -sin(beat))
+                a["armUL"] = 42f + bL * 10f               // brazos abiertos al frente
+                a["armUR"] = -42f - bR * 10f
+                a["foreArmL"] = -95f + bL * 60f           // el codo dobla: la mano golpea
+                a["foreArmR"] = 95f - bR * 60f
+                a["head"] = 3f + sin(beat * 2f) * 2f      // cabeza marcando el ritmo
+                a["torso"] = sin(beat) * 2f
+                a["thighL"] = 5f                          // postura firme, piernas abiertas
+                a["thighR"] = -5f
+                bob = -max(bL, bR) * 0.008f               // rebote con el golpe
+                sway = sin(beat) * 0.004f
+            }
+            "run" -> {  // CORRER: zancada amplia, brazos doblados en contrafase
+                val c = t * 3f                            // 3 zancadas por clip
+                val stepL = max(0f, sin(c))
+                val stepR = max(0f, -sin(c))
+                a["thighL"] = 22f * stepL + 6f
+                a["thighR"] = 22f * stepR + 6f
+                a["shinL"] = -55f * stepL
+                a["shinR"] = -55f * stepR
+                a["armUL"] = -18f - 20f * sin(c)          // bombeo de brazos
+                a["foreArmL"] = -70f                      // codos doblados a 70 grados
+                a["armUR"] = -18f + 20f * sin(c)
+                a["foreArmR"] = 70f
+                a["torso"] = sin(c) * 3f
+                a["head"] = -sin(c) * 2f
+                bob = -0.012f * max(stepL, stepR)         // vuelo: el cuerpo sube
+                sway = 0.014f * sin(c)
+            }
+            "jump" -> {  // SALTAR: agacharse -> impulso -> vuelo -> aterrizar (2 saltos)
+                val c = t * 2f
+                val air = max(0f, sin(c))                 // 0 en el suelo, 1 en el punto más alto
+                val squat = max(0f, -sin(c))             // agachado antes de saltar
+                a["thighL"] = 12f * air - 25f * squat
+                a["thighR"] = 12f * air - 25f * squat
+                a["shinL"] = -10f * air - 85f * squat     // rodillas muy dobladas en la agachada
+                a["shinR"] = -10f * air - 85f * squat
+                a["armUL"] = 20f - squat * 30f + air * 130f   // brazos arriba en el vuelo
+                a["armUR"] = -20f + squat * 30f - air * 130f
+                a["foreArmL"] = -10f - squat * 20f
+                a["foreArmR"] = 10f + squat * 20f
+                a["torso"] = -squat * 5f + air * 2f
+                a["head"] = -squat * 3f
+                bob = -0.045f * air                       // el cuerpo sube en el vuelo
+                sway = 0f
+            }
+            "dance" -> {  // BAILAR: brazos arriba alternando, cadera marcada
+                val c = t * 2f
+                val s = sin(c)
+                a["armUL"] = 100f + 45f * s               // un brazo arriba...
+                a["foreArmL"] = -25f + 15f * s
+                a["armUR"] = -100f + 45f * s              // ...y el otro en contrafase
+                a["foreArmR"] = 25f - 15f * s
+                a["thighL"] = 12f * max(0f, s)            // pies marcando el suelo
+                a["shinL"] = -30f * max(0f, s)
+                a["thighR"] = 12f * max(0f, -s)
+                a["shinR"] = -30f * max(0f, -s)
+                a["torso"] = s * 5f
+                a["head"] = -s * 4f
+                bob = 0.006f * kotlin.math.abs(s)
+                sway = 0.018f * s                        // cadera marcada
+            }
+            "cheer" -> {  // CELEBRAR: ambos brazos arriba, saltitos
+                val c = t * 2f
+                val s = sin(c)
+                val hop = max(0f, s)
+                a["armUL"] = 135f + s * 10f
+                a["armUR"] = -135f - s * 10f
+                a["foreArmL"] = -20f + s * 8f
+                a["foreArmR"] = 20f - s * 8f
+                a["thighL"] = 8f * hop
+                a["thighR"] = 8f * hop
+                a["shinL"] = -20f * hop
+                a["shinR"] = -20f * hop
+                a["head"] = -4f                           // mirando arriba
+                a["torso"] = s * 1.5f
+                bob = -0.02f * hop
+                sway = s * 0.005f
+            }
             else -> {  // IDLE (reposo): respiración suave
                 a["armUL"] = sin(t) * 2.5f
                 a["foreArmL"] = sin(t) * 3f
@@ -168,6 +261,38 @@ object PuppetEngine {
             }
         }
         return Pose(a, bob, sway)
+    }
+
+    // v0.6.0 (FASE B): DIRECCIÓN del caminar/correr (pedido del dueño:
+    // ver TODAS las direcciones en pantalla). Se aplica SOBRE la pose ya
+    // interpolada (la dirección es la VISTA, no el movimiento):
+    //   "der"/"izq"  perfil (la vista izquierda es ESPEJO en el renderer)
+    //   "frente"     piernas levantan EN EL SITIO, codos algo abiertos
+    //   "espalda"    mismos ángulos que frente (el renderer tapa la cara)
+    //   "3/4"        torso y cabeza girados unos grados (diagonal aprox.)
+    // Las demás plantillas (percusión, bailar...) y el MOCAP DE VIDEO no se
+    // tocan: el espejo "izq" también les funciona (flip del renderer).
+    fun applyDirection(pose: Pose, builtin: String, direction: String): Pose {
+        if (direction == "der" || direction == "izq") return pose
+        if (builtin != "walk" && builtin != "run") return pose
+        val m = LinkedHashMap<String, Float>(pose.angles)
+        when (direction) {
+            "frente", "espalda" -> {
+                m["thighL"] = (m["thighL"] ?: 0f) * 0.45f   // sin zancada: levanta en el sitio
+                m["thighR"] = (m["thighR"] ?: 0f) * 0.45f
+                m["shinL"] = (m["shinL"] ?: 0f) * 0.75f
+                m["shinR"] = (m["shinR"] ?: 0f) * 0.75f
+                m["armUL"] = (m["armUL"] ?: 0f) * 0.6f + 8f  // brazos pegados, balanceo corto
+                m["armUR"] = (m["armUR"] ?: 0f) * 0.6f - 8f
+                m["foreArmL"] = ((m["foreArmL"] ?: 0f) - 18f).coerceIn(-150f, 5f)
+                m["foreArmR"] = ((m["foreArmR"] ?: 0f) + 18f).coerceIn(-5f, 150f)
+            }
+            "3/4" -> {
+                m["torso"] = (m["torso"] ?: 0f) + 4f         // giro de diagonal aproximado
+                m["head"] = (m["head"] ?: 0f) - 3f
+            }
+        }
+        return Pose(m, pose.bob, pose.sway)
     }
 
     // Pose de la plantilla ACTIVA (builtin o de usuario) en el progreso p.
@@ -213,8 +338,8 @@ object PuppetEngine {
     // El usuario arrastra la MANO (o el PIE); el codo (o la rodilla) se
     // acomoda solo. Algoritmo FABRIK (algoritmo público; referencia:
     // tutorial oficial Khronos/Vulkan y SkeletonModification2DFABRIK de
-    // Godot): pasadas hacia adelante y atrás sobre las posiciones de
-    // los huesos hasta que la punta alcance el objetivo.
+    // Godot): pasadas hacia adelante y atrás sobre las posiciones de los
+    // huesos hasta que la punta alcance el objetivo.
     //
     // upperName/foreName: cadena de 2 huesos (p.ej. "armUR"+"foreArmR").
     // angles: pose actual completa. targetX/targetY: objetivo en

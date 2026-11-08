@@ -20,6 +20,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -111,6 +113,26 @@ class MainActivity : ComponentActivity() {
     // v0.5.1 (FASE A): zoom del editor de poses (1x..4x) para posar con
     // precisión con el dedo (pedido del dueño: ZOOM+ / ZOOM-).
     private var poseZoom by mutableStateOf(1f)
+    // v0.6.0 (FASE B): PERSONAJE POR PIEZAS + cara recortada de la foto.
+    // avatarMode = el actor es el personaje dibujado (sin distorsión);
+    // el editor grande son VARIANTES (colores/peinado/barba) del AvatarSpec.
+    private var avatarMode by mutableStateOf(false)
+    private var avatarSpec by mutableStateOf(Avatars.presets()[0])
+    private var showAvatarSheet by mutableStateOf(false)
+    // Cara: dibujada por código o la FOTO RECORTADA (FaceCutter IA /
+    // elipse manual con el dedo). El recorte pasa a ser SOLO CARA.
+    private var faceFromPhoto by mutableStateOf(false)
+    private var faceBitmap: Bitmap? = null
+    private var faceEditMode by mutableStateOf(false)   // colocar la elipse con el dedo
+    private var faceCx by mutableStateOf(0.5f)          // centro en fracciones de la foto
+    private var faceCy by mutableStateOf(0.35f)
+    private var faceR by mutableStateOf(0.18f)         // radio (lado menor de la foto)
+    @Volatile private var faceFitL = 0f                // rect de la foto en pantalla
+    @Volatile private var faceFitT = 0f
+    @Volatile private var faceFitW = 0f
+    @Volatile private var faceFitH = 0f
+    // Dirección del caminar/correr (pedido del dueño: ver todas)
+    private var direction by mutableStateOf("der")
 
     private val pickLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) loadPhoto(uri)
@@ -168,17 +190,27 @@ class MainActivity : ComponentActivity() {
                                 // - MODO POSAR: arrastra los PUNTOS del muñeco (IK).
                                 // - MODO NORMAL: arrastra el ACTOR y colócalo donde
                                 //   quieras en la escena (ya no vive fijo al centro).
-                                .pointerInput(poseMode) {
+                                .pointerInput(poseMode, faceEditMode) {
                                     detectDragGestures(
                                         onDragStart = { offset ->
-                                            if (poseMode) selectLimb(offset.x, offset.y)
+                                            if (faceEditMode) moveFaceEllipse(offset.x, offset.y)
+                                            else if (poseMode) selectLimb(offset.x, offset.y)
                                         },
-                                        onDrag = { change, _ ->
-                                            if (poseMode) dragLimbTo(change.position.x, change.position.y)
-                                            else {
-                                                if (lastCanvasW > 0 && lastCanvasH > 0 && photo != null) {
-                                                    actorX = (actorX + change.position.x / lastCanvasW).coerceIn(0.05f, 0.95f)
-                                                    actorY = (actorY + change.position.y / lastCanvasH).coerceIn(0.05f, 0.95f)
+                                        onDrag = { change, dragAmount ->
+                                            if (faceEditMode) {
+                                                moveFaceEllipse(change.position.x, change.position.y)
+                                            } else if (poseMode) {
+                                                dragLimbTo(change.position.x, change.position.y)
+                                            } else {
+                                                // v0.6.0 FIX (reporte del dueño): dragAmount es
+                                                // el DELTA del gesto; change.position es la posicion
+                                                // absoluta del dedo (bug v0.5.1: sumaba la posicion
+                                                // absoluta en cada evento y el actor se disparaba
+                                                // a la derecha y no volvía al centro).
+                                                if (lastCanvasW > 0 && lastCanvasH > 0 && (photo != null || avatarMode)) {
+                                                    actorX = (actorX + dragAmount.x / lastCanvasW).coerceIn(0.05f, 0.95f)
+                                                    actorY = (actorY + dragAmount.y / lastCanvasH).coerceIn(0.05f, 0.95f)
+                                                    change.consume()
                                                     drawPreview()
                                                 }
                                             }
@@ -280,6 +312,39 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // MODO POSAR (IK): fila de controles del editor de poses
+                        // v0.6.0 (FASE B): edición de la elipse de la cara
+                        if (faceEditMode) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { faceR = (faceR - 0.02f).coerceAtLeast(0.06f); drawPreview() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.size(width = 44.dp, height = 34.dp)
+                                ) { Text("-", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                                Text("cara " + (faceR * 100f).toInt() + "%", color = TextGray, fontSize = 11.sp)
+                                Button(
+                                    onClick = { faceR = (faceR + 0.02f).coerceAtMost(0.45f); drawPreview() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.size(width = 44.dp, height = 34.dp)
+                                ) { Text("+", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                                Button(
+                                    onClick = { confirmFaceCut() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Gold),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Confirmar cara", color = Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                                Button(
+                                    onClick = { faceEditMode = false; drawPreview() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) { Text("Salir", color = TextGray, fontSize = 12.sp) }
+                            }
+                        }
                         if (poseMode) {
                             // v0.5.1 (FASE A): ZOOM+ / ZOOM- para posar con precisión
                             Row(
@@ -338,13 +403,14 @@ class MainActivity : ComponentActivity() {
                             ToolItem("Movimiento") { showSheet = true }
                             ToolItem("Recorte") { applyDualCutout() }
                             ToolItem("Estilo") { showStyleSheet = true }
+                            // v0.6.0 (FASE B): editor de personaje por piezas
+                            ToolItem("Personaje") { showAvatarSheet = true }
                             ToolItem("Voz") {
                                 ttsManager?.speak(textOverlay)
                                 if (textOverlay.isBlank()) {
                                     Toast.makeText(this@MainActivity, "Escribí un subtítulo primero", Toast.LENGTH_SHORT).show()
                                 }
                             }
-                            ToolItem("Audio") { Toast.makeText(this@MainActivity, "Próximamente", Toast.LENGTH_SHORT).show() }
                         }
 
                         // Línea de tiempo y Play
@@ -387,6 +453,9 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Formato del video
                     if (showFormatSheet) FormatSheet()
+
+                    // Hoja inferior: Personaje (FASE B)
+                    if (showAvatarSheet) AvatarSheet()
                 }
             }
         }
@@ -406,7 +475,7 @@ class MainActivity : ComponentActivity() {
             onDismissRequest = { showSheet = false },
             containerColor = Panel
         ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
                 Text("Plantillas de Movimiento", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text("Elegí cómo se mueve tu muñeco", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 Spacer(modifier = Modifier.height(14.dp))
@@ -414,6 +483,30 @@ class MainActivity : ComponentActivity() {
                     MovementOption("Reposo", "idle", Modifier.weight(1f))
                     MovementOption("Caminar", "walk", Modifier.weight(1f))
                     MovementOption("Saludar", "wave", Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                // v0.6.0 (FASE B): 5 PLANTILLAS NUEVAS (8 en total)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MovementOption("Percusión", "drum", Modifier.weight(1f))
+                    MovementOption("Correr", "run", Modifier.weight(1f))
+                    MovementOption("Saltar", "jump", Modifier.weight(1f))
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MovementOption("Bailar", "dance", Modifier.weight(1f))
+                    MovementOption("Celebrar", "cheer", Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                // v0.6.0 (FASE B): DIRECCIONES (pedido del dueño: ver TODAS al
+                // caminar/correr; el perfil izquierdo es el espejo del derecho)
+                Text("Dirección", color = Gold, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DirectionOption("Perfil →", "der", Modifier.weight(1f))
+                    DirectionOption("Perfil ←", "izq", Modifier.weight(1f))
+                    DirectionOption("Frente", "frente", Modifier.weight(1f))
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DirectionOption("Espalda", "espalda", Modifier.weight(1f))
+                    DirectionOption("Diagonal 3/4", "3/4", Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -466,6 +559,232 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.height(28.dp))
             }
         }
+    }
+
+    // ---------- HOJA INFERIOR: PERSONAJE (FASE B, v0.6.0) ----------
+    // Editor GRANDE de variantes (pedido del dueño ya en Fase B): 3
+    // personajes prototipo HOMBRE + colores/peinado/barba por categoría
+    // + cara dibujada o la cara recortada de la foto + dirección.
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun AvatarSheet() {
+        ModalBottomSheet(
+            onDismissRequest = { showAvatarSheet = false },
+            containerColor = Panel
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text("Personaje por piezas", color = Gold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("El personaje se dibuja pieza a pieza: se mueve con TODO (plantillas, IK, clonar vídeo) SIN distorsión", color = TextGray, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModeOpt("Foto recortada", !avatarMode) {
+                        avatarMode = false; drawPreview()
+                    }
+                    ModeOpt("Personaje", avatarMode) {
+                        avatarMode = true; showExportBtn = true; drawPreview()
+                    }
+                }
+                if (avatarMode) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Personajes", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (p in Avatars.presets()) {
+                            ModeOpt(p.name, p.name == avatarSpec.name) {
+                                avatarSpec = p.copy(); drawPreview()
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Cara", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ModeOpt("Dibujada", !faceFromPhoto) {
+                            faceFromPhoto = false; drawPreview()
+                        }
+                        ModeOpt("De la foto", faceFromPhoto) {
+                            if (faceBitmap != null) { faceFromPhoto = true; drawPreview() }
+                            else cutFaceAutoFlow()
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { cutFaceAutoFlow() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Recortar cara (IA)", color = Gold, fontSize = 11.sp) }
+                        Button(
+                            onClick = { showAvatarSheet = false; faceEditMode = true; drawPreview() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Panel),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Elipse con el dedo", color = Gold, fontSize = 11.sp) }
+                    }
+                    // Variantes por categoría (editor grande)
+                    SwatchRow("Piel", Avatars.SKINS, avatarSpec.skin) { avatarSpec = avatarSpec.copy(skin = it); drawPreview() }
+                    SwatchRow("Cabello", Avatars.HAIRS, avatarSpec.hair) { avatarSpec = avatarSpec.copy(hair = it); drawPreview() }
+                    Text("Peinado", color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for ((i, s) in Avatars.HAIR_STYLE_NAMES.withIndex()) {
+                            ModeOpt(s, avatarSpec.hairStyle == i, small = true) {
+                                avatarSpec = avatarSpec.copy(hairStyle = i); drawPreview()
+                            }
+                        }
+                    }
+                    SwatchRow("Camiseta", Avatars.SHIRTS, avatarSpec.shirt) { avatarSpec = avatarSpec.copy(shirt = it); drawPreview() }
+                    SwatchRow("Pantalón", Avatars.PANTS, avatarSpec.pants) { avatarSpec = avatarSpec.copy(pants = it); drawPreview() }
+                    SwatchRow("Zapatos", Avatars.SHOES, avatarSpec.shoes) { avatarSpec = avatarSpec.copy(shoes = it); drawPreview() }
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ModeOpt("Sin barba", !avatarSpec.beard) { avatarSpec = avatarSpec.copy(beard = false); drawPreview() }
+                        ModeOpt("Con barba", avatarSpec.beard) { avatarSpec = avatarSpec.copy(beard = true); drawPreview() }
+                    }
+                    Text("La dirección del caminar se elige en Movimiento", color = ComposeColor.Gray, fontSize = 10.sp, modifier = Modifier.padding(top = 10.dp))
+                }
+                Spacer(modifier = Modifier.height(28.dp))
+            }
+        }
+    }
+
+    // Botón/píldora seleccionable reutilizable del editor de personaje
+    @Composable
+    fun ModeOpt(label: String, selected: Boolean, small: Boolean = false, onClick: () -> Unit) {
+        Button(
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(containerColor = if (selected) Gold else Panel),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            modifier = Modifier.height(if (small) 30.dp else 36.dp)
+        ) {
+            Text(
+                label,
+                fontSize = if (small) 10.sp else 11.sp,
+                color = if (selected) Ink else TextGray,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+
+    // Fila de muestras de color de una categoría (piel, camiseta, etc.)
+    @Composable
+    fun SwatchRow(label: String, colors: IntArray, current: Int, pick: (Int) -> Unit) {
+        Text(label, color = Gold, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (c in colors) {
+                Box(
+                    modifier = Modifier.size(32.dp)
+                        .background(ComposeColor(c), RoundedCornerShape(16.dp))
+                        .border(
+                            if (c == current) 3.dp else 1.dp,
+                            if (c == current) Gold else ComposeColor(0xFF2A2D35),
+                            RoundedCornerShape(16.dp)
+                        )
+                        .clickable { pick(c) }
+                )
+            }
+        }
+    }
+
+    // Opción de dirección (perfil/frente/espalda/diagonal)
+    @Composable
+    fun DirectionOption(label: String, key: String, modifier: Modifier = Modifier) {
+        val selected = (direction == key)
+        Button(
+            onClick = { direction = key; drawPreview() },
+            colors = ButtonDefaults.buttonColors(containerColor = if (selected) Gold else Panel),
+            shape = RoundedCornerShape(8.dp),
+            modifier = modifier.height(34.dp)
+        ) {
+            Text(label, fontSize = 10.sp, color = if (selected) Ink else TextGray, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        }
+    }
+
+    // PLAN A del recorte de cara: Face Landmarker (IA). Si no hay modelo
+    // o no encuentra cara, cae SOLA al plan B (elipse manual).
+    private fun cutFaceAutoFlow() {
+        val original = originalPhoto ?: photo
+        if (original == null) { statusMsg = "Cargá primero una foto con tu cara (botón Actor)"; return }
+        showAvatarSheet = false
+        statusMsg = "Buscando tu cara (IA)... esperá un momento"
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            val face = FaceCutter.cutFaceAuto(this, original)
+            val ms = SystemClock.elapsedRealtime() - t0
+            runOnUiThread {
+                if (face != null) {
+                    safeRecycle(faceBitmap)
+                    faceBitmap = face
+                    faceFromPhoto = true
+                    avatarMode = true
+                    showExportBtn = true
+                    statusMsg = "Cara recortada con IA (" + ms + " ms)"
+                    drawPreview()
+                } else {
+                    statusMsg = "IA de cara no lista: ajustá la elipse con el dedo"
+                    faceEditMode = true
+                    drawPreview()
+                }
+            }
+        }.start()
+    }
+
+    // PLAN B: confirmar la elipse manual y recortar la cara
+    private fun confirmFaceCut() {
+        val original = originalPhoto ?: photo
+        if (original == null) {
+            faceEditMode = false
+            statusMsg = "No hay foto para recortar"
+            drawPreview()
+            return
+        }
+        statusMsg = "Recortando cara..."
+        Thread {
+            val face = FaceCutter.cutFaceManual(original, faceCx, faceCy, faceR)
+            runOnUiThread {
+                safeRecycle(faceBitmap)
+                faceBitmap = face
+                faceFromPhoto = true
+                avatarMode = true
+                showExportBtn = true
+                faceEditMode = false
+                statusMsg = "Cara recortada · el personaje ya la lleva puesta"
+                drawPreview()
+            }
+        }.start()
+    }
+
+    // Mueve el centro de la elipse con el dedo (coords de pantalla -> fracción de la foto)
+    private fun moveFaceEllipse(canvasX: Float, canvasY: Float) {
+        if (faceFitW <= 0f || faceFitH <= 0f) return
+        faceCx = ((canvasX - faceFitL) / faceFitW).coerceIn(0.02f, 0.98f)
+        faceCy = ((canvasY - faceFitT) / faceFitH).coerceIn(0.02f, 0.98f)
+        drawPreview()
+    }
+
+    // Preview del modo recorte de cara: la foto + la elipse dorada
+    private fun drawFaceEditPreview(canvas: android.graphics.Canvas) {
+        val bmp = originalPhoto ?: photo ?: return
+        canvas.drawColor(android.graphics.Color.BLACK)
+        val cw = canvas.width.toFloat()
+        val ch = canvas.height.toFloat()
+        val s = minOf(cw / bmp.width, ch / bmp.height) * 0.92f
+        val dw = bmp.width * s
+        val dh = bmp.height * s
+        val left = (cw - dw) / 2f
+        val top = (ch - dh) / 2f
+        faceFitL = left; faceFitT = top; faceFitW = dw; faceFitH = dh
+        val bp = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(bmp, null, android.graphics.RectF(left, top, left + dw, top + dh), bp)
+        val ecx = left + faceCx * dw
+        val ecy = top + faceCy * dh
+        val rx = faceR * minOf(dw, dh)
+        val ry = rx * 1.15f
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.style = android.graphics.Paint.Style.STROKE
+        p.color = 0xFFF5B841.toInt()
+        p.strokeWidth = 3f
+        canvas.drawOval(android.graphics.RectF(ecx - rx, ecy - ry, ecx + rx, ecy + ry), p)
     }
 
     // ---------- HOJA INFERIOR: PLANILLAS DE ESTILO (PASO 3) ----------
@@ -650,6 +969,11 @@ class MainActivity : ComponentActivity() {
     private fun labelFor(t: String): String = when (t) {
         "walk" -> "Caminar"
         "wave" -> "Saludar"
+        "drum" -> "Percusión"
+        "run" -> "Correr"
+        "jump" -> "Saltar"
+        "dance" -> "Bailar"
+        "cheer" -> "Celebrar"
         else -> "Reposo"
     }
 
@@ -1238,11 +1562,15 @@ class MainActivity : ComponentActivity() {
 
     // El export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService(w: Int, h: Int) {
-        if (photo == null) { statusMsg = "Elegí una foto primero"; return }
-        val bmp = photo!!
+        // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
+        if (photo == null && !avatarMode) { statusMsg = "Elegí una foto o activá un Personaje"; return }
         statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
-        ExportService.start(this, bmp, backgroundPhoto, mesh, textOverlay, template, w, h, textX, textY, textSizePx, actorX, actorY)
+        ExportService.start(
+            this, photo, backgroundPhoto, mesh, textOverlay, template, w, h,
+            textX, textY, textSizePx, actorX, actorY,
+            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction
+        )
     }
 
     private fun drawPreview() {
@@ -1251,6 +1579,10 @@ class MainActivity : ComponentActivity() {
         try {
             lastCanvasW = canvas.width
             lastCanvasH = canvas.height
+            // v0.6.0 (FASE B): modo recorte de cara — la foto + la elipse
+            if (faceEditMode) {
+                drawFaceEditPreview(canvas)
+            } else {
             // v0.5.1 (FASE A): ZOOM de precisión en modo posar. El canvas
             // se escala alrededor del origen del muñeco y los 8 puntos
             // se dibujan DESPUÉS del restore, compensados a pantalla.
@@ -1266,7 +1598,10 @@ class MainActivity : ComponentActivity() {
                     drawSkeleton = false,
                     overridePose = customPose,
                     textX = textX, textY = textY, textSize = textSizePx,
-                    actorX = actorX, actorY = actorY
+                    actorX = actorX, actorY = actorY,
+                    avatarMode = avatarMode, avatarSpec = avatarSpec,
+                    avatarFace = if (faceFromPhoto) faceBitmap else null,
+                    direction = direction
                 )
                 canvas.restore()
             } else {
@@ -1277,10 +1612,14 @@ class MainActivity : ComponentActivity() {
                     drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
                     overridePose = customPose,   // MODO POSAR: la pose arrastrada manda
                     textX = textX, textY = textY, textSize = textSizePx,
-                    actorX = actorX, actorY = actorY
+                    actorX = actorX, actorY = actorY,
+                    avatarMode = avatarMode, avatarSpec = avatarSpec,
+                    avatarFace = if (faceFromPhoto) faceBitmap else null,
+                    direction = direction
                 )
             }
             if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)
+            }
         } finally { holder.unlockCanvasAndPost(canvas) }
     }
 

@@ -12,6 +12,13 @@ import kotlin.math.min
 // OVERRIDE de pose (modo Posar con IK): el editor congela la pose que el
 // usuario está arrastrando y este motor la pinta exactamente igual en
 // pantalla y en el MP4 exportado.
+//
+// v0.6.0 (FASE B): MODO PERSONAJE. Si avatarMode está activo se dibuja el
+// AVATAR POR PIEZAS (AvatarRenderer) anclado al MISMO rig en vez de la foto
+// deformada: plantillas, IK, editor de poses y MOCAP DE VIDEO lo animan
+// igual, pero SIN distorsión (no hay píxeles arrastrados entre huesos).
+// La DIRECCIÓN ("izq") aplica el ESPEJO alrededor del origen del actor y
+// "espalda" oculta la cara (AvatarRenderer).
 object SceneRenderer {
 
     fun renderScene(
@@ -21,7 +28,9 @@ object SceneRenderer {
         drawSkeleton: Boolean,
         overridePose: Pose? = null,
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
-        actorX: Float = 0.5f, actorY: Float = 0.55f
+        actorX: Float = 0.5f, actorY: Float = 0.55f,
+        avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
+        avatarFace: Bitmap? = null, direction: String = "der"
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
         canvas.drawColor(Color.BLACK)
@@ -52,11 +61,23 @@ object SceneRenderer {
         val oy = h * actorY + pose.bob * unit
         val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
 
-        canvas.save()
-        canvas.translate(ox, oy)
-        canvas.scale(unit, unit)
-        PuppetEngine.drawPuppet(canvas, solved, mesh)
-        canvas.restore()
+        if (avatarMode && avatarSpec != null) {
+            // FASE B: personaje por piezas + dirección (vista) sobre la pose
+            val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", direction)
+            val solvedAv = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
+            canvas.save()
+            canvas.translate(ox, oy)
+            canvas.scale(unit, unit)
+            if (direction == "izq") canvas.scale(-1f, 1f)   // perfil izquierdo = espejo
+            AvatarRenderer.draw(canvas, solvedAv, avatarSpec, avatarFace, direction)
+            canvas.restore()
+        } else {
+            canvas.save()
+            canvas.translate(ox, oy)
+            canvas.scale(unit, unit)
+            PuppetEngine.drawPuppet(canvas, solved, mesh)
+            canvas.restore()
+        }
 
         // 3) ESQUELETO (solo depuración, desactivado por defecto)
         if (drawSkeleton) {
@@ -99,10 +120,16 @@ object SceneRenderer {
         progress: Float, w: Int, h: Int, template: ActiveTemplate, drawSkeleton: Boolean,
         overridePose: Pose? = null,
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
-        actorX: Float = 0.5f, actorY: Float = 0.55f
+        actorX: Float = 0.5f, actorY: Float = 0.55f,
+        avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
+        avatarFace: Bitmap? = null, direction: String = "der"
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        renderScene(Canvas(out), w, h, progress, background, mesh, text, template, template, 1f, drawSkeleton, overridePose, textX, textY, textSize, actorX, actorY)
+        renderScene(
+            Canvas(out), w, h, progress, background, mesh, text, template, template, 1f,
+            drawSkeleton, overridePose, textX, textY, textSize, actorX, actorY,
+            avatarMode, avatarSpec, avatarFace, direction
+        )
         return out
     }
 }

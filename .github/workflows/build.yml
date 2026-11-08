@@ -57,6 +57,22 @@ jobs:
           set -e
           echo "CartoonGAN tflite: ${SZ} bytes"
           if [ "${SZ}" -lt 1000000 ]; then echo "::error::El modelo CartoonGAN no se descargo bien (${SZ} bytes)"; exit 1; fi
+      # FASE B (v0.6.0): Face Landmarker para recortar SOLO la cara de la
+      # foto. Si la descarga falla el build SIGUE VERDE: la app cae al
+      # Plan B (elipse manual con el dedo, 100% offline).
+      - name: Download Face Landmarker model (Fase B)
+        run: |
+          mkdir -p app/src/main/assets
+          set +e
+          curl -fL --connect-timeout 20 --max-time 240 --retry 3 --retry-delay 5 -o app/src/main/assets/face_landmarker.task https://storage.googleapis.com/mediapipe-models/face_landmarker/float16/1/face_landmarker.task
+          FZ=$(stat -c%s app/src/main/assets/face_landmarker.task 2>/dev/null || echo 0)
+          set -e
+          if [ "${FZ}" -lt 1000000 ]; then
+            echo "::warning::face_landmarker.task no se descargo (${FZ} bytes). La app usara el Plan B (elipse manual con el dedo)."
+            rm -f app/src/main/assets/face_landmarker.task
+          else
+            echo "face_landmarker.task: ${FZ} bytes"
+          fi
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Build debug APK

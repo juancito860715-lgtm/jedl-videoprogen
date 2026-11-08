@@ -21,6 +21,10 @@ import java.io.File
 // v0.5.0: la plantilla pendiente puede ser builtin, MOCAP de video o una
 // animación propia del usuario (ActiveTemplate) — el MP4 queda EXACTO
 // a lo que se ve en pantalla.
+//
+// v0.6.0 (FASE B): el export también soporta el MODO PERSONAJE (avatar por
+// piezas + cara recortada de la foto + dirección). La foto (mesh) pasa a
+// ser OPCIONAL: se puede exportar un video solo con el personaje.
 class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -52,7 +56,7 @@ class ExportService : Service() {
     private fun doExport() {
         val photo = pendingPhoto
         val text = pendingText
-        if (photo == null) { stopSelf(); return }
+        if (photo == null && !(pendingAvatarMode && pendingAvatarSpec != null)) { stopSelf(); return }
 
         val nm = getSystemService(NotificationManager::class.java)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -70,7 +74,9 @@ class ExportService : Service() {
                     pendingBackground, pendingMesh, text, progress, pendingWidth, pendingHeight, pendingTemplate,
                     drawSkeleton = false,
                     textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize,
-                    actorX = pendingActorX, actorY = pendingActorY
+                    actorX = pendingActorX, actorY = pendingActorY,
+                    avatarMode = pendingAvatarMode, avatarSpec = pendingAvatarSpec,
+                    avatarFace = pendingAvatarFace, direction = pendingDirection
                 )
             }
 
@@ -89,6 +95,10 @@ class ExportService : Service() {
             pendingBackground = null
             pendingMesh = null
             pendingText = ""
+            // v0.6.0: los datos del avatar SOLO se desreferencian (la cara
+            // pertenece a la MainActivity, no se recicla aquí)
+            pendingAvatarSpec = null
+            pendingAvatarFace = null
             stopSelf()
         }
     }
@@ -125,14 +135,21 @@ class ExportService : Service() {
         // v0.5.1 (FASE A): posición libre del actor en la escena
         @Volatile var pendingActorX: Float = 0.5f
         @Volatile var pendingActorY: Float = 0.55f
+        // v0.6.0 (FASE B): modo personaje (avatar por piezas + cara + dirección)
+        @Volatile var pendingAvatarMode: Boolean = false
+        @Volatile var pendingAvatarSpec: AvatarSpec? = null
+        @Volatile var pendingAvatarFace: Bitmap? = null
+        @Volatile var pendingDirection: String = "der"
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
-            context: Context, photo: Bitmap, background: Bitmap?,
+            context: Context, photo: Bitmap?, background: Bitmap?,
             mesh: SkinnedMesh?, text: String, template: ActiveTemplate,
             width: Int, height: Int,
             textX: Float, textY: Float, textSize: Float,
-            actorX: Float = 0.5f, actorY: Float = 0.55f
+            actorX: Float = 0.5f, actorY: Float = 0.55f,
+            avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
+            avatarFace: Bitmap? = null, direction: String = "der"
         ) {
             pendingPhoto = photo
             pendingBackground = background
@@ -146,6 +163,10 @@ class ExportService : Service() {
             pendingTextSize = textSize
             pendingActorX = actorX
             pendingActorY = actorY
+            pendingAvatarMode = avatarMode
+            pendingAvatarSpec = avatarSpec
+            pendingAvatarFace = avatarFace
+            pendingDirection = direction
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
