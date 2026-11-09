@@ -130,8 +130,54 @@ data class ActiveTemplate(val builtin: String?, val mocap: MotionTemplate?) {
 
 object PuppetEngine {
 
+    // ---------- BIBLIOTECA DE MOVIMIENTOS INYECTADA (v0.8.0) ----------
+    // Acciones cargadas de app/assets/motions (MotionLibraryParser +
+    // AnimationRetargeter). Si una acción está aquí, poseFor() usa SUS
+    // keyframes y las fórmulas de abajo quedan de RESPALDO offline
+    // (sin assets, comportamiento idéntico a v0.7.0).
+    private val libraryTemplates = HashMap<String, MotionTemplate>()
+    private val libraryLabels = HashMap<String, String>()
+    private val libraryOrder = ArrayList<String>()
+
+    /** Inyecta una acción de la biblioteca (pisar un id = reemplaza su fórmula). */
+    fun injectLibraryTemplate(entry: MotionLibraryParser.MotionLibraryEntry) {
+        if (entry.id.isBlank()) return
+        if (!libraryOrder.contains(entry.id)) libraryOrder.add(entry.id)
+        libraryTemplates[entry.id] = entry.template
+        libraryLabels[entry.id] = entry.label
+    }
+
+    /** ids de las acciones inyectadas, en orden de carga. */
+    fun libraryActionIds(): List<String> = ArrayList(libraryOrder)
+
+    /** Label visible de una acción de la biblioteca (null = no está inyectada). */
+    fun labelForAction(id: String): String? = libraryLabels[id]
+
+    /** Vacía la biblioteca (tests / recarga). */
+    fun clearLibrary() {
+        libraryTemplates.clear()
+        libraryLabels.clear()
+        libraryOrder.clear()
+    }
+
+    /**
+     * Carga TODOS los JSON/CSV de assets/<dir> y los inyecta.
+     * Llamar en HILO DE FONDO. Devuelve cuántas acciones quedaron
+     * activas (0 = la app sigue con las fórmulas internas).
+     */
+    fun loadLibrary(assets: android.content.res.AssetManager, dir: String = "motions"): Int {
+        clearLibrary()
+        val entries = MotionLibraryParser.loadFromAssets(assets, dir)
+        for (e in entries) injectLibraryTemplate(e)
+        return entries.size
+    }
+
     // ---------- PLANTILLAS DE MOVIMIENTO (p = progreso 0..1 del clip de 5 s) ----------
     fun poseFor(template: String, p: Float): Pose {
+        // v0.8.0: si la acción fue inyectada desde la BIBLIOTECA de
+        // movimientos (JSON/CSV en assets/motions), sus keyframes MANDAN;
+        // las fórmulas de abajo son solo el respaldo sin biblioteca.
+        libraryTemplates[template]?.let { return poseAtTemplate(it, p) }
         val t = p * 2f * Math.PI.toFloat()
         val a = LinkedHashMap<String, Float>()
         var bob = 0f
