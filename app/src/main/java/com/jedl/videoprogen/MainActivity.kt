@@ -1167,3 +1167,544 @@ class MainActivity : ComponentActivity() {
             val bmp = decodeScaled(uri, 1280)
             if (bmp != null) {
                 runOnUiThread {
+                    // v0.5.1: el fondo también entra en deshacer/rehacer
+                    // (cambiar de fondo por descuido ya no lo pierde)
+                    pushUndo()
+                    safeRecycle(backgroundPhoto)
+                    backgroundPhoto = bmp
+                    statusMsg = "Fondo cargado"
+                    drawPreview()
+                }
+            } else {
+                runOnUiThread { statusMsg = "Error al cargar fondo" }
+            }
+        }.start()
+    }
+
+    // ---------- RECORTE DUAL (TAREA 1): IA MediaPipe OFFLINE -> Chroma Key ----------
+    // v0.4.8: el Recorte usa la IA MediaPipe que YA VIENE en el APK
+    // (100% offline, funciona en Cuba sin Play services). El umbral de
+    // 200 ms de versiones anteriores era demasiado estricto para el
+    // Redmi de 4 GB: ahora la IA es la vía principal (SubjectSegmenter
+    // v0.4.8) y el Chroma Key solo entra si la IA falla de verdad.
+    // Siempre trabaja sobre ORIGINAL_PHOTO: recortar 2 veces es seguro
+    // (antes recortaba sobre la foto ya recortada y salía negra).
+    private fun applyDualCutout() {
+        val original = originalPhoto
+        if (original == null) { statusMsg = "Elegí una foto primero"; return }
+        statusMsg = "Recortando fondo (IA)..."
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            val iaCut = SubjectSegmenter.cutSubject(this, original)
+            val tIa = SystemClock.elapsedRealtime() - t0
+            if (iaCut != null) {
+                // IA exitosa: usar el recorte fino
+                val newMesh = SkinnedMesh(iaCut)
+                runOnUiThread {
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = iaCut
+                    mesh = newMesh
+                    statusMsg = "Recorte IA aplicado (" + tIa + " ms)"
+                    drawPreview()
+                }
+            } else {
+                // FALLBACK SOLO SI LA IA FALLÓ: Chroma Key + Toast
+                val chromaCut = ChromaKey.applyChromaKey(original)
+                val newMesh = SkinnedMesh(chromaCut)
+                runOnUiThread {
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = chromaCut
+                    mesh = newMesh
+                    Toast.makeText(this@MainActivity, "IA no disponible: recorte por color (Chroma Key)", Toast.LENGTH_LONG).show()
+                    statusMsg = "Recorte por color aplicado"
+                    drawPreview()
+                }
+            }
+        }.start()
+    }
+
+    // ---------- PLANILLAS DE ESTILO (ETAPA B): ANIME REAL IA + filtros de color ----------
+    // "CARTOON" = White-box CartoonGAN offline (3 MB dentro del APK):
+    // 1 sola inferencia de red neuronal por foto (tarda unos segundos
+    // en el Redmi, es normal). Los demás estilos son ColorMatrix
+    // instantáneos. Si el modelo no está disponible, cae al filtro
+    // de color "ANIME" con Toast: la app nunca se cierra.
+    // ============================================================
+    // v0.5.1 (FASE A): ESTILO AL FONDO — la IA de anime (CartoonGAN)
+    // aplicada al FONDO de la escena. Inferencia SECUENCIAL (nunca dos
+    // a la vez: RAM segura en 4 GB). Si no hay fondo, avisa y no rompe.
+    // ============================================================
+    private fun applyStyleToBackground() {
+        val target = backgroundPhoto
+        if (target == null) { statusMsg = "Elegí primero un fondo (botón Fondo)"; return }
+        statusMsg = "Aplicando anime (IA) al fondo... esperá unos segundos"
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            val cartoon = Cartoonizer.apply(this, target)
+            val ms = SystemClock.elapsedRealtime() - t0
+            if (cartoon == null) {
+                // PLAN B: sin modelo de IA -> filtro de color instantáneo
+                val styled = StyleFilter.apply(target, "ANIME")
+                runOnUiThread {
+                    pushUndo()
+                    backgroundPhoto = styled
+                    statusMsg = "Filtro de color aplicado al fondo (IA no disponible)"
+                    drawPreview()
+                }
+            } else {
+                runOnUiThread {
+                    pushUndo()
+                    backgroundPhoto = cartoon
+                    statusMsg = "Anime IA aplicado al fondo (" + ms + " ms)"
+                    drawPreview()
+                }
+            }
+        }.start()
+    }
+
+    private fun applyStyle(style: String) {
+        if (style == "CARTOON_BG") { applyStyleToBackground(); return }
+        val target = photo
+        if (target == null) { statusMsg = "Elegí una foto primero"; return }
+        if (style == "CARTOON") {
+            statusMsg = "Aplicando anime (IA)... esperá unos segundos"
+            Thread {
+                val t0 = SystemClock.elapsedRealtime()
+                val cartoon = Cartoonizer.apply(this, target)
+                val ms = SystemClock.elapsedRealtime() - t0
+                if (cartoon != null) {
+                    val newMesh = SkinnedMesh(cartoon)
+                    runOnUiThread {
+                        pushUndo()
+                        if (photo !== originalPhoto) safeRecycle(photo)
+                        photo = cartoon
+                        mesh = newMesh
+                        statusMsg = "Anime IA aplicado (" + ms + " ms)"
+                        drawPreview()
+                    }
+                } else {
+                    // FALLBACK: la IA no está disponible -> filtro de color
+                    val styled = StyleFilter.apply(target, "ANIME")
+                    val newMesh = SkinnedMesh(styled)
+                    runOnUiThread {
+                        pushUndo()
+                        if (photo !== originalPhoto) safeRecycle(photo)
+                        photo = styled
+                        mesh = newMesh
+                        Toast.makeText(this@MainActivity, "IA de anime no disponible: se aplicó filtro de color", Toast.LENGTH_LONG).show()
+                        statusMsg = "Filtro de color aplicado"
+                        drawPreview()
+                    }
+                }
+            }.start()
+        } else {
+            statusMsg = "Aplicando estilo..."
+            Thread {
+                val styled = StyleFilter.apply(target, style)
+                runOnUiThread {
+                    // La foto es la textura de la malla: reconstruir con la versión estilizada
+                    val newMesh = SkinnedMesh(styled)
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    photo = styled
+                    mesh = newMesh
+                    statusMsg = "Estilo aplicado"
+                    drawPreview()
+                }
+            }.start()
+        }
+    }
+
+    // ============================================================
+    // ETAPA C (v0.5.0): CLONAR EL MOVIMIENTO DE UN VIDEO — MOCAP IA
+    // 100% OFFLINE (MediaPipe Pose en modo VIDEO ya viene en el APK).
+    // Es lo que hacen Modif (Plask) y ToonDance, pero sin internet:
+    // el rastro de 33 juntas del video se convierte en una plantilla
+    // de keyframes para el muñeco.
+    // PLAN B (seguridad): si el video no sirve, no detecta persona o
+    // falla la extracción, la app avisa y NO cambia nada (las
+    // plantillas actuales siguen intactas).
+    // ============================================================
+    private fun cloneFromVideo(uri: Uri) {
+        if (photo == null) {
+            statusMsg = "Elegí una foto primero"
+            Toast.makeText(this, "Elegí una foto primero (Actor)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // v0.5.1 (FASE A): INSTRUMENTACIÓN COMPLETA. El dueño reportó que el
+        // video "nunca se mostró" SIN ningún mensaje: ahora cada paso avisa
+        // en pantalla y captura TODO error (Throwable, no solo Exception).
+        // Así la próxima prueba dice EXACTAMENTE dónde se cortó.
+        Toast.makeText(this, "Video recibido: analizando...", Toast.LENGTH_SHORT).show()
+        statusMsg = "Video recibido: abriendo..."
+        Thread {
+            val t0 = SystemClock.elapsedRealtime()
+            var retriever: MediaMetadataRetriever? = null
+            var cloner: VideoMotionCloner? = null
+            try {
+                retriever = MediaMetadataRetriever()
+                retriever.setDataSource(this, uri)
+                val durMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
+                runOnUiThread { statusMsg = "Video abierto: " + (durMs / 1000f).toInt() + " s de duración" }
+                // RAM SEGURA (Redmi 4 GB): muestreo a 15 fps (paso de 66 ms),
+                // máximo 75 cuadros ~ 5 s, cada cuadro reescalado a 256 px de alto.
+                val limitMs = minOf(durMs, 5000L)
+                val frames = ArrayList<android.graphics.Bitmap>()
+                var ts = 0L
+                val extractStart = SystemClock.elapsedRealtime()
+                while (ts <= limitMs && frames.size < 75) {
+                    // guard anti-cuelgue: si la extracción tarda demasiado, corto
+                    if (SystemClock.elapsedRealtime() - extractStart > 30000L) {
+                        runOnUiThread { statusMsg = "Extracción muy lenta: " + frames.size + " cuadros en 30 s" }
+                        break
+                    }
+                    val full = retriever.getFrameAtTime(ts * 1000L, MediaMetadataRetriever.OPTION_CLOSEST) ?: break
+                    val scaled = if (full.height > 256) {
+                        val w = (full.width * 256f / full.height).toInt().coerceAtLeast(1)
+                        android.graphics.Bitmap.createScaledBitmap(full, w, 256, true).also { if (it !== full) full.recycle() }
+                    } else full
+                    frames.add(scaled)
+                    ts += 66L
+                }
+                runOnUiThread { statusMsg = "Cuadros extraídos: " + frames.size + " de ~" + (limitMs / 66L + 1) }
+                if (frames.size < 8) {
+                    runOnUiThread {
+                        statusMsg = "Solo pude leer " + frames.size + " cuadros (video corto o códec problemático)"
+                        Toast.makeText(this@MainActivity, "El video dio " + frames.size + " cuadros: probá otro video más corto", Toast.LENGTH_LONG).show()
+                    }
+                    return@Thread
+                }
+                runOnUiThread { statusMsg = "Analizando movimiento con IA (" + frames.size + " cuadros)..." }
+                cloner = VideoMotionCloner(this)
+                val trail = cloner.extractMotion(frames)
+                for (f in frames) { try { f.recycle() } catch (_: Exception) {} }
+                val withPerson = trail.count { it.isNotEmpty() }
+                runOnUiThread { statusMsg = "IA lista: " + withPerson + "/" + trail.size + " cuadros con persona" }
+                runOnUiThread { statusMsg = "Convirtiendo movimiento a plantilla..." }
+                val template = MotionTrailConverter.toTemplate("Video " + (userTemplates.size + 1), trail)
+                val ms = SystemClock.elapsedRealtime() - t0
+                if (template == null) {
+                    runOnUiThread {
+                        statusMsg = "No detecté cuerpo completo (solo " + withPerson + " cuadros válidos de " + trail.size + ")"
+                        Toast.makeText(this@MainActivity, "La persona debe verse COMPLETA en el video", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    runOnUiThread {
+                        userTemplates.add(template)
+                        selectActiveTemplate(ActiveTemplate(null, template))
+                        statusMsg = "¡Movimiento clonado en " + ms + " ms! (" + template.frames.size + " poses)"
+                        Toast.makeText(this@MainActivity, "¡Movimiento clonado! Ya está en Mis plantillas", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (t: Throwable) {
+                // v0.5.1: Throwable (no solo Exception) — si moría por un error
+                // no-Exception el proceso quedaba MUDO, exactamente el síntoma
+                // que reportó el dueño ("no apareció ningún mensaje").
+                runOnUiThread {
+                    statusMsg = "Error al analizar el video: " + (t.message ?: t.javaClass.simpleName)
+                    Toast.makeText(this@MainActivity, "Error: " + (t.message ?: t.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                try { cloner?.close() } catch (_: Exception) {}
+                try { retriever?.release() } catch (_: Exception) {}
+            }
+        }.start()
+    }
+
+    // ============================================================
+    // MODO POSAR (IK, v0.5.0): arrastrar la mano o el pie del muñeco
+    // con el dedo y que codo/hombro (o rodilla/cadera) se acomoden
+    // solos (FABRIK). Las poses se guardan como keyframes y al final
+    // se crea una plantilla propia "Mi animación N".
+    // ============================================================
+    private fun enterPoseMode() {
+        if (photo == null) {
+            statusMsg = "Elegí una foto primero"
+            return
+        }
+        // Congelar la pose actual del template como punto de partida
+        customPose = PuppetEngine.poseForActive(template, animProgress)
+        editingFrames.clear()
+        poseZoom = 1f
+        poseMode = true
+        statusMsg = "Arrastrá la mano o el pie del muñeco (8 puntos · Z+/Z− para zoom)"
+        drawPreview()
+    }
+
+    private fun exitPoseMode() {
+        poseMode = false
+        customPose = null
+        activeLimb = 0
+        statusMsg = "Editor de poses cerrado"
+        drawPreview()
+    }
+
+    // Toca la pantalla: elegir el PUNTO del muñeco más cercano.
+    // v0.5.1 (FASE A): 8 puntos arrastrables (pedido del dueño: ajustar
+    // manualmente punto por punto): 4 EFECTORES (manos/pies -> IK de 2
+    // huesos) + 4 INTERMEDIOS (codos/rodillas -> orientan el antebrazo
+    // o la espinilla hacia el dedo). Con ZOOM+ el umbral de agarre es
+    // más fino para posar con precisión.
+    private fun selectLimb(screenX: Float, screenY: Float) {
+        val pose = customPose ?: return
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        // coordenadas del MUÑECO (mundo con zoom aplicado)
+        val wx: Float; val wy: Float
+        if (poseZoom > 1f) {
+            val p = toWorld(screenX, screenY, origin.first, origin.second)
+            wx = p.first; wy = p.second
+        } else { wx = screenX; wy = screenY }
+        val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+        // id: 1-4 = manos/pies (IK), 5-8 = codos/rodillas (orientan)
+        val targets = arrayOf(
+            Triple(1, solved["foreArmL"]?.tip, "mano izquierda"),
+            Triple(2, solved["foreArmR"]?.tip, "mano derecha"),
+            Triple(3, solved["shinL"]?.tip, "pie izquierdo"),
+            Triple(4, solved["shinR"]?.tip, "pie derecho"),
+            Triple(5, solved["foreArmL"]?.joint, "codo izquierdo"),
+            Triple(6, solved["foreArmR"]?.joint, "codo derecho"),
+            Triple(7, solved["shinL"]?.joint, "rodilla izquierda"),
+            Triple(8, solved["shinR"]?.joint, "rodilla derecha")
+        )
+        var best = 0
+        var bestDist = Float.MAX_VALUE
+        var bestName = ""
+        for ((id, tip, name) in targets) {
+            if (tip == null) continue
+            val px = origin.first + tip.x * unit
+            val py = origin.second + tip.y * unit
+            val d = android.graphics.PointF.length(px - wx, py - wy)
+            if (d < bestDist) { bestDist = d; best = id; bestName = name }
+        }
+        // umbral de agarre en coordenadas de MUNDO (las distancias de
+        // arriba ya están en mundo cuando hay zoom): 35% del unit
+        if (best > 0 && bestDist < unit * 0.35f) {
+            activeLimb = best
+            statusMsg = "Posando " + bestName + " (punto " + best + "/8 · zoom " + poseZoom + "x)"
+        } else {
+            activeLimb = 0
+        }
+    }
+
+    // pantalla -> mundo (con zoom centrado en el muñeco)
+    private fun toWorld(screenX: Float, screenY: Float, pivotX: Float, pivotY: Float): Pair<Float, Float> {
+        if (poseZoom <= 1f) return Pair(screenX, screenY)
+        return Pair(
+            pivotX + (screenX - pivotX) / poseZoom,
+            pivotY + (screenY - pivotY) / poseZoom
+        )
+    }
+
+    // mundo -> pantalla (para dibujar los puntos encima)
+    private fun toScreen(wx: Float, wy: Float, pivotX: Float, pivotY: Float): Pair<Float, Float> {
+        if (poseZoom <= 1f) return Pair(wx, wy)
+        return Pair(
+            pivotX + (wx - pivotX) * poseZoom,
+            pivotY + (wy - pivotY) * poseZoom
+        )
+    }
+
+    // Dedo en movimiento: resolver hacia la nueva posición
+    private fun dragLimbTo(screenX: Float, screenY: Float) {
+        if (activeLimb == 0) return
+        val pose = customPose ?: return
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        var ux = (screenX - origin.first) / unit
+        var uy = (screenY - origin.second) / unit
+        if (poseZoom > 1f) {
+            val p = toWorld(screenX, screenY, origin.first, origin.second)
+            ux = (p.first - origin.first) / unit
+            uy = (p.second - origin.second) / unit
+        }
+        // id 1-4: IK de 2 huesos (hombro+codo / cadera+rodilla)
+        // id 5-8: girar SOLO el hueso inferior hacia el dedo
+        val newPose: Pose = when (activeLimb) {
+            1 -> PuppetEngine.solveTwoBoneIk("armUL", "foreArmL", pose.angles, ux, uy)
+            2 -> PuppetEngine.solveTwoBoneIk("armUR", "foreArmR", pose.angles, ux, uy)
+            3 -> PuppetEngine.solveTwoBoneIk("thighL", "shinL", pose.angles, ux, uy)
+            4 -> PuppetEngine.solveTwoBoneIk("thighR", "shinR", pose.angles, ux, uy)
+            5 -> PuppetEngine.pointBoneTo("foreArmL", pose.angles, ux, uy)
+            6 -> PuppetEngine.pointBoneTo("foreArmR", pose.angles, ux, uy)
+            7 -> PuppetEngine.pointBoneTo("shinL", pose.angles, ux, uy)
+            else -> PuppetEngine.pointBoneTo("shinR", pose.angles, ux, uy)
+        }
+        // preservar bob/sway de la pose congelada (que el muñeco no salte)
+        customPose = Pose(newPose.angles, pose.bob, pose.sway)
+        drawPreview()
+    }
+
+    // Guardar la pose actual como keyframe de "Mi animación"
+    private fun savePoseKeyframe() {
+        val pose = customPose ?: return
+        editingFrames.add(PoseFrame(editingFrames.size.toFloat(), pose))
+        statusMsg = "Pose " + editingFrames.size + " guardada · posá otra y volvé a guardar"
+    }
+
+    // Cerrar la animación propia: reparte las poses en el tiempo y la aplica
+    private fun finishUserAnimation() {
+        if (editingFrames.size < 2) {
+            statusMsg = "Guardá al menos 2 poses con «Guardar pose»"
+            return
+        }
+        val n = editingFrames.size
+        val frames = ArrayList<PoseFrame>(n)
+        for (i in 0 until n) {
+            val t = if (n == 1) 0f else i.toFloat() / (n - 1).toFloat()
+            frames.add(PoseFrame(t, editingFrames[i].pose))
+        }
+        val mt = MotionTemplate("Mi animación " + (userTemplates.size + 1), frames, loop = false)
+        userTemplates.add(mt)
+        poseMode = false
+        customPose = null
+        activeLimb = 0
+        selectActiveTemplate(ActiveTemplate(null, mt))
+        statusMsg = "¡Animación propia creada con " + n + " poses!"
+        drawPreview()
+    }
+
+    // Píxeles por unidad de muñeco (misma fórmula del SceneRenderer)
+    private fun puppetUnit(): Float {
+        val w = lastCanvasW.toFloat()
+        val h = lastCanvasH.toFloat()
+        if (w <= 0f || h <= 0f) return 1f
+        return minOf(w, h) * 0.88f / 0.85f
+    }
+
+    // Origen (ox, oy) del muñeco en pantalla (misma fórmula del SceneRenderer
+    // v0.5.1: respeta la posición libre del actor actorX/actorY)
+    private fun puppetOrigin(pose: Pose): Pair<Float, Float> {
+        val unit = puppetUnit()
+        val ox = lastCanvasW * actorX + pose.sway * unit
+        val oy = lastCanvasH * actorY + pose.bob * unit
+        return Pair(ox, oy)
+    }
+
+    // ---------- ANIMACIÓN Y EXPORT ----------
+    private fun startAnimation() {
+        if (poseMode) {
+            Toast.makeText(this, "Tocá «Salir» del modo posar para animar", Toast.LENGTH_SHORT).show()
+            return
+        }
+        frameClock?.stop(); animProgress = 0f; statusMsg = "Animando (5 segundos)..."
+        val clock = FrameClock(fps = 30) { frame ->
+            val p = Math.min(1f, frame / (30f * 5f))
+            animProgress = p; drawPreview()
+            if (p >= 1f) runOnUiThread { statusMsg = "Listo para exportar" }
+        }
+
+        frameClock = clock; clock.start()
+    }
+
+    // El export corre en el servicio en primer plano (anti-MIUI)
+    private fun triggerExportService(w: Int, h: Int) {
+        // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
+        if (photo == null && !avatarMode) { statusMsg = "Elegí una foto o activá un Personaje"; return }
+        statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
+        ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
+        ExportService.start(
+            this, photo, backgroundPhoto, mesh, textOverlay, template, w, h,
+            textX, textY, textSizePx, actorX, actorY,
+            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction
+        )
+    }
+
+    private fun drawPreview() {
+        val holder = previewSurface?.holder ?: return
+        val canvas = holder.lockCanvas() ?: return
+        try {
+            lastCanvasW = canvas.width
+            lastCanvasH = canvas.height
+            // v0.6.0 (FASE B): modo recorte de cara — la foto + la elipse
+            if (faceEditMode) {
+                drawFaceEditPreview(canvas)
+            } else {
+            // v0.5.1 (FASE A): ZOOM de precisión en modo posar. El canvas
+            // se escala alrededor del origen del muñeco y los 8 puntos
+            // se dibujan DESPUÉS del restore, compensados a pantalla.
+            val zoomIn = poseMode && poseZoom > 1f && customPose != null
+            if (zoomIn) {
+                val pivot = puppetOrigin(customPose!!)
+                canvas.save()
+                canvas.scale(poseZoom, poseZoom, pivot.first, pivot.second)
+                SceneRenderer.renderScene(
+                    canvas, canvas.width, canvas.height, animProgress,
+                    backgroundPhoto, mesh, textOverlay,
+                    template, templatePrev, blendFactor(),
+                    drawSkeleton = false,
+                    overridePose = customPose,
+                    textX = textX, textY = textY, textSize = textSizePx,
+                    actorX = actorX, actorY = actorY,
+                    avatarMode = avatarMode, avatarSpec = avatarSpec,
+                    avatarFace = if (faceFromPhoto) faceBitmap else null,
+                    direction = direction
+                )
+                canvas.restore()
+            } else {
+                SceneRenderer.renderScene(
+                    canvas, canvas.width, canvas.height, animProgress,
+                    backgroundPhoto, mesh, textOverlay,
+                    template, templatePrev, blendFactor(),
+                    drawSkeleton = false,   // huesos ocultos: solo guías matemáticas
+                    overridePose = customPose,   // MODO POSAR: la pose arrastrada manda
+                    textX = textX, textY = textY, textSize = textSizePx,
+                    actorX = actorX, actorY = actorY,
+                    avatarMode = avatarMode, avatarSpec = avatarSpec,
+                    avatarFace = if (faceFromPhoto) faceBitmap else null,
+                    direction = direction
+                )
+            }
+            if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)
+            }
+        } finally { holder.unlockCanvasAndPost(canvas) }
+    }
+
+    // Los 8 PUNTOS DORADOS arrastrables del modo posar (pedido del dueño:
+    // ver y ajustar punto por punto). 1-4 = manos/pies (IK), 5-8 =
+    // codos/rodillas (orientan el hueso inferior). El punto ACTIVO se
+    // pinta naranja. El radio crece con el zoom para seguir siendo
+    // agarrable con el dedo.
+    private fun drawPoseHandles(canvas: android.graphics.Canvas, pose: Pose) {
+        val unit = puppetUnit()
+        val origin = puppetOrigin(pose)
+        val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        val bones = listOf("foreArmL", "foreArmR", "shinL", "shinR")
+        val rBig = unit * 0.05f * poseZoom
+        val rSmall = unit * 0.035f * poseZoom
+        // tips primero (ids 1-4), joints después (ids 5-8) — mismo orden
+        // que selectLimb para que el punto activo coincida siempre
+        for ((idx, bone) in bones.withIndex()) {
+            val id = 1 + idx
+            val t = solved[bone]?.tip ?: continue
+            val p = toScreen(origin.first + t.x * unit, origin.second + t.y * unit, origin.first, origin.second)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = if (activeLimb == id) 0xFFFF5722.toInt() else 0xFFFFC107.toInt()
+            canvas.drawCircle(p.first, p.second, rBig, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.color = 0xFF212121.toInt()
+            paint.strokeWidth = 2f
+            canvas.drawCircle(p.first, p.second, rBig, paint)
+        }
+        for ((idx, bone) in bones.withIndex()) {
+            val id = 5 + idx
+            val j = solved[bone]?.joint ?: continue
+            val p = toScreen(origin.first + j.x * unit, origin.second + j.y * unit, origin.first, origin.second)
+            paint.style = android.graphics.Paint.Style.FILL
+            paint.color = if (activeLimb == id) 0xFFFF5722.toInt() else 0xFFFFC107.toInt()
+            canvas.drawCircle(p.first, p.second, rSmall, paint)
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.color = 0xFF212121.toInt()
+            paint.strokeWidth = 2f
+            canvas.drawCircle(p.first, p.second, rSmall, paint)
+        }
+    }
+
+    override fun onDestroy() {
+        ttsManager?.stop()
+        super.onDestroy()
+    }
+}
