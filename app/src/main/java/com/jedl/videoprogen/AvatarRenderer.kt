@@ -36,6 +36,17 @@ object AvatarRenderer {
 
     private const val FACE_LINE = 0xFF262626.toInt()
 
+    // ============================================================
+    // DIAGNÓSTICO v0.8.1 (Misión 1 del dueño): SOLO rectángulos
+    // de color sólido colgados de la MATRIZ de cada hueso. Sin
+    // foto, sin arte vectorial, sin PNGs. Cada rect nace EXACTO
+    // en su articulación (y=0 local): un despegue se ve al instante.
+    // Verifica jerarquía: worldDeg = worldDegPadre + reposo + anim
+    // (si el torso rota, cabeza y brazos DEBEN seguir pegados).
+    // Al aprobar la Misión 1: poner en false (no borrar nada más).
+    // ============================================================
+    private const val DEBUG_RECTS = true
+
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
         val r = ((argb ushr 16) and 0xFF) * 3 / 4
@@ -49,6 +60,10 @@ object AvatarRenderer {
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
+        // v0.8.1 DIAGNÓSTICO (Misión 1): rectángulos sólidos por hueso.
+        // PENDIENTE DE APROBACIÓN EN EL REDMI. Al aprobar: DEBUG_RECTS = false.
+        if (DEBUG_RECTS) { drawDebugRects(canvas, solved); return }
+
         // Piezas PNG del banco (F2+): si hay manifest, mandan.
         if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) return
 
@@ -74,6 +89,40 @@ object AvatarRenderer {
         canvas.concat(bp.matrix)   // espacio local del hueso (pivote = articulación)
         block(canvas)
         canvas.restoreToCount(save)
+    }
+
+    // ---------- DIAGNÓSTICO v0.8.1: RECTÁNGULOS SÓLIDOS (Misión 1) ----------
+    // Colores: torso ROJO, cabeza AZUL, brazos VERDE (oscuro = antebrazo),
+    // piernas AMARILLO (naranja = espinilla). El torso mide 0.22 de ancho
+    // para que los hombros del rig (±0.10) caigan DENTRO del rojo y se vea
+    // que los brazos cuelgan de él. Orden de dibujo = el de las piezas F1.
+    private fun drawDebugRects(canvas: Canvas, solved: Map<String, BonePose>) {
+        val order = arrayOf(
+            "armUR", "foreArmR", "thighR", "shinR", "torso",
+            "thighL", "shinL", "head", "armUL", "foreArmL"
+        )
+        for (name in order) {
+            val bp = solved[name] ?: continue
+            val save = canvas.save()
+            canvas.concat(bp.matrix)   // espacio local del hueso (pivote = articulación)
+            when (name) {
+                "torso" -> rect(canvas, 0xFFE53935.toInt(), 0.220f, 0.000f, 0.280f)
+                "head" -> rect(canvas, 0xFF1E88E5.toInt(), 0.170f, 0.000f, 0.190f)
+                "armUL", "armUR" -> rect(canvas, 0xFF43A047.toInt(), 0.054f, 0.000f, 0.145f)
+                "foreArmL", "foreArmR" -> rect(canvas, 0xFF2E7D32.toInt(), 0.046f, 0.000f, 0.135f)
+                "thighL", "thighR" -> rect(canvas, 0xFFFDD835.toInt(), 0.074f, 0.000f, 0.190f)
+                "shinL", "shinR" -> rect(canvas, 0xFFFB8C00.toInt(), 0.058f, 0.000f, 0.180f)
+            }
+            canvas.restoreToCount(save)
+        }
+    }
+
+    private fun rect(c: Canvas, color: Int, w: Float, y0: Float, y1: Float) {
+        p.style = Paint.Style.FILL; p.color = color
+        c.drawRect(-w / 2f, y0, w / 2f, y1, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 0.006f
+        p.color = 0xFF0B0C10.toInt()
+        c.drawRect(-w / 2f, y0, w / 2f, y1, p)
     }
 
     // ---------- PIEZAS VECTORIALES (espacio local de cada hueso) ----------
