@@ -70,20 +70,21 @@ class ExportService : Service() {
             val sceneDuration = (pendingProjectScene?.durationMillis ?: 5_000L).coerceAtLeast(1L)
             val exporter = Mp4Exporter(pendingWidth, pendingHeight, 30, sceneDuration / 1_000f)
             val projectId = pendingProjectId
-            val assetStore = if (projectId != null) ProjectAssetStore(this) else null
+            val assetStore = projectId?.let { ProjectAssetStore(this) }
             val imageCache = object : LruCache<String, Bitmap>(24 * 1024) {
                 override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
             }
             fun resolveExportBitmap(relativePath: String): Bitmap? {
                 val id = projectId ?: return null
+                val store = assetStore ?: return null
                 imageCache.get(relativePath)?.let { if (!it.isRecycled) return it }
                 return try {
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    assetStore!!.openAsset(id, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
+                    store.openAsset(id, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
                     var sample = 1
                     while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
                     val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-                    assetStore.openAsset(id, relativePath).use { input ->
+                    store.openAsset(id, relativePath).use { input ->
                         BitmapFactory.decodeStream(input, null, options)?.also { imageCache.put(relativePath, it) }
                     }
                 } catch (_: Exception) { null }
