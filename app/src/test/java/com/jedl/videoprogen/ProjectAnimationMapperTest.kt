@@ -2,6 +2,7 @@ package com.jedl.videoprogen
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class ProjectAnimationMapperTest {
@@ -29,5 +30,46 @@ class ProjectAnimationMapperTest {
         assertTrue(restored.loop)
         assertEquals(-80f, restored.frames.last().pose.angles["armUR"]!!)
         assertEquals(-0.02f, restored.frames.first().pose.sway, 0.0001f)
+    }
+
+    @Test
+    fun rejectsKeyframesThatCollapseToSameMillisecond() {
+        val source = MotionTemplate(
+            "Too dense",
+            listOf(
+                PoseFrame(0.1000f, Pose(mapOf("armUR" to 0f))),
+                PoseFrame(0.1001f, Pose(mapOf("armUR" to 10f)))
+            ),
+            loop = false
+        )
+        try {
+            ProjectAnimationMapper.fromMotionTemplate(
+                source,
+                targetLayerId = "00000000-0000-0000-0000-000000000001",
+                durationMillis = 1_000L
+            )
+            fail("Expected millisecond collision to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("coinciden"))
+        }
+    }
+
+    @Test
+    fun rejectsNonFiniteRootMotion() {
+        val source = MotionTemplate(
+            "Invalid",
+            listOf(PoseFrame(0f, Pose(emptyMap(), Float.NaN, 0f))),
+            loop = false
+        )
+        try {
+            ProjectAnimationMapper.fromMotionTemplate(
+                source,
+                targetLayerId = "00000000-0000-0000-0000-000000000001",
+                durationMillis = 1_000L
+            )
+            fail("Expected invalid root motion to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("desplazamientos"))
+        }
     }
 }
