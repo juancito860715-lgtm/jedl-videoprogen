@@ -35,7 +35,7 @@ object SceneRenderer {
         assetResolver: ((String) -> Bitmap?)? = null
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
-        canvas.drawColor(Color.BLACK)
+        canvas.drawColor(projectScene?.backgroundColor ?: Color.BLACK)
         if (background != null) {
             val bs = maxOf(w.toFloat() / background.width, h.toFloat() / background.height)
             val bdw = background.width * bs
@@ -127,13 +127,14 @@ object SceneRenderer {
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
         actorX: Float = 0.5f, actorY: Float = 0.55f,
         avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
-        avatarFace: Bitmap? = null, direction: String = "der"
+        avatarFace: Bitmap? = null, direction: String = "der",
+        projectScene: SceneDocument? = null
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         renderScene(
             Canvas(out), w, h, progress, background, mesh, text, template, template, 1f,
             drawSkeleton, overridePose, textX, textY, textSize, actorX, actorY,
-            avatarMode, avatarSpec, avatarFace, direction
+            avatarMode, avatarSpec, avatarFace, direction, projectScene, null
         )
         return out
     }
