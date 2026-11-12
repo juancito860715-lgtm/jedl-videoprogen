@@ -28,7 +28,8 @@ object SceneLayerRenderer {
         canvasHeight: Int,
         layers: List<LayerDocument>,
         assetResolver: (String) -> Bitmap?,
-        sceneTimeMillis: Long = 0L
+        sceneTimeMillis: Long = 0L,
+        characterRenderer: ((LayerDocument) -> Unit)? = null
     ) {
         if (canvasWidth <= 0 || canvasHeight <= 0 || layers.isEmpty() || sceneTimeMillis < 0L) return
         val imagePaint = requireNotNull(bitmapPaint.get())
@@ -38,11 +39,14 @@ object SceneLayerRenderer {
             .sortedBy { it.zIndex }
             .forEach { layer ->
                 val save = canvas.save()
+                if (layer.type == LayerType.CHARACTER && characterRenderer != null) {
+                    canvas.saveLayerAlpha(null, (layer.opacity * 255f).toInt().coerceIn(0, 255))
+                }
                 canvas.translate(canvasWidth * layer.transform.x, canvasHeight * layer.transform.y)
                 canvas.rotate(layer.transform.rotationDegrees)
                 canvas.scale(layer.transform.scaleX, layer.transform.scaleY)
                 when (layer.type) {
-                    LayerType.IMAGE, LayerType.CHARACTER, LayerType.BACKGROUND -> {
+                    LayerType.IMAGE, LayerType.BACKGROUND -> {
                         val bitmap = layer.assetPath?.let(assetResolver)
                         if (bitmap != null && !bitmap.isRecycled && bitmap.width > 0 && bitmap.height > 0) {
                             val width: Float
@@ -61,6 +65,20 @@ object SceneLayerRenderer {
                             imagePaint.alpha = (layer.opacity * 255f).toInt().coerceIn(0, 255)
                             val destination = RectF(-width / 2f, -height / 2f, width / 2f, height / 2f)
                             canvas.drawBitmap(bitmap, null, destination, imagePaint)
+                        }
+                    }
+                    LayerType.CHARACTER -> {
+                        if (characterRenderer != null) {
+                            characterRenderer.invoke(layer)
+                        } else {
+                            val bitmap = layer.assetPath?.let(assetResolver)
+                            if (bitmap != null && !bitmap.isRecycled && bitmap.width > 0 && bitmap.height > 0) {
+                                val fit = min((canvasWidth * 0.8f) / bitmap.width, (canvasHeight * 0.8f) / bitmap.height)
+                                val width = bitmap.width * fit
+                                val height = bitmap.height * fit
+                                imagePaint.alpha = (layer.opacity * 255f).toInt().coerceIn(0, 255)
+                                canvas.drawBitmap(bitmap, null, RectF(-width / 2f, -height / 2f, width / 2f, height / 2f), imagePaint)
+                            }
                         }
                     }
                     LayerType.TEXT, LayerType.SUBTITLE -> if (layer.text.isNotEmpty()) {
