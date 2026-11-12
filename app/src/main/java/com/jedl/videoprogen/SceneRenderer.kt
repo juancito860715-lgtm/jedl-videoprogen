@@ -30,7 +30,9 @@ object SceneRenderer {
         textX: Float = 0.5f, textY: Float = 0.9f, textSize: Float = 60f,
         actorX: Float = 0.5f, actorY: Float = 0.55f,
         avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
-        avatarFace: Bitmap? = null, direction: String = "der"
+        avatarFace: Bitmap? = null, direction: String = "der",
+        projectScene: SceneDocument? = null,
+        assetResolver: ((String) -> Bitmap?)? = null
     ) {
         // 1) FONDO: negro o la imagen elegida desde galería (cover-fit)
         canvas.drawColor(Color.BLACK)
@@ -96,8 +98,11 @@ object SceneRenderer {
             }
         }
 
-        // 4) SUBTÍTULO al final, siempre visible encima
+        // 4) Texto heredado del editor anterior.
         drawText(canvas, w, h, text, textX, textY, textSize)
+        if (projectScene != null && assetResolver != null) {
+            SceneLayerRenderer.drawLayers(canvas, w, h, projectScene.layers, assetResolver)
+        }
     }
 
     private fun drawText(
