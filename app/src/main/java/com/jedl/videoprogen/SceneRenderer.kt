@@ -34,8 +34,11 @@ object SceneRenderer {
             canvas.drawBitmap(background, null, RectF(bdx, bdy, bdx + bdw, bdy + bdh), Paint(Paint.FILTER_BITMAP_FLAG))
         }
 
+        val sceneTime = projectScene?.let {
+            (progress.coerceIn(0f, 1f) * it.durationMillis).toLong()
+        } ?: 0L
         val characterLayer = projectScene?.layers
-            ?.filter { it.visible && it.type == LayerType.CHARACTER }
+            ?.filter { it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime) }
             ?.maxByOrNull { it.zIndex }
         val shouldDrawActor = !projectMode || characterLayer != null
         if (shouldDrawActor) {
@@ -94,7 +97,6 @@ object SceneRenderer {
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
         } else {
-            val sceneTime = (progress.coerceIn(0f, 1f) * projectScene!!.durationMillis).toLong()
             SceneLayerRenderer.drawLayers(
                 canvas, w, h, projectScene.layers,
                 assetResolver ?: { null },
