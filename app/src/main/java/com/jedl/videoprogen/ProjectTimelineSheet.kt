@@ -66,8 +66,12 @@ fun ProjectTimelineSheet(
                 Button(onClick = { onImportMedia(TimelineTrackType.AUDIO) }, modifier = Modifier.weight(1f)) { Text("Importar audio") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { addTrack(TimelineTrackType.VOICE) }, modifier = Modifier.weight(1f)) { Text("Pista de voz") }
-                Button(onClick = { addTrack(TimelineTrackType.MUSIC) }, modifier = Modifier.weight(1f)) { Text("Pista música") }
+                Button(onClick = { onImportMedia(TimelineTrackType.VOICE) }, modifier = Modifier.weight(1f)) { Text("Importar voz") }
+                Button(onClick = { onImportMedia(TimelineTrackType.MUSIC) }, modifier = Modifier.weight(1f)) { Text("Importar música") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { addTrack(TimelineTrackType.VOICE) }, modifier = Modifier.weight(1f)) { Text("Pista vacía de voz") }
+                Button(onClick = { addTrack(TimelineTrackType.MUSIC) }, modifier = Modifier.weight(1f)) { Text("Pista vacía de música") }
             }
             OutlinedTextField(
                 value = subtitle,
