@@ -100,8 +100,10 @@ object SceneRenderer {
 
         // 4) Texto heredado del editor anterior.
         drawText(canvas, w, h, text, textX, textY, textSize)
-        if (projectScene != null && assetResolver != null) {
-            SceneLayerRenderer.drawLayers(canvas, w, h, projectScene.layers, assetResolver)
+        if (projectScene != null) {
+            SceneLayerRenderer.drawLayers(canvas, w, h, projectScene.layers) { path ->
+                assetResolver?.invoke(path)
+            }
         }
     }
 
@@ -128,13 +130,14 @@ object SceneRenderer {
         actorX: Float = 0.5f, actorY: Float = 0.55f,
         avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
         avatarFace: Bitmap? = null, direction: String = "der",
-        projectScene: SceneDocument? = null
+        projectScene: SceneDocument? = null,
+        assetResolver: ((String) -> Bitmap?)? = null
     ): Bitmap {
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         renderScene(
             Canvas(out), w, h, progress, background, mesh, text, template, template, 1f,
             drawSkeleton, overridePose, textX, textY, textSize, actorX, actorY,
-            avatarMode, avatarSpec, avatarFace, direction, projectScene, null
+            avatarMode, avatarSpec, avatarFace, direction, projectScene, assetResolver
         )
         return out
     }
