@@ -6,6 +6,9 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
@@ -45,8 +48,16 @@ class ProjectRepository(context: Context) {
                 stream.flush()
                 stream.fd.sync()
             }
-            if (target.exists() && !target.delete()) throw IOException("No se pudo reemplazar el proyecto anterior")
-            if (!temporary.renameTo(target)) throw IOException("No se pudo publicar el proyecto guardado")
+            try {
+                Files.move(
+                    temporary.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
         } finally {
             if (temporary.exists()) temporary.delete()
         }
