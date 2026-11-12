@@ -66,8 +66,8 @@ class Mp4Exporter(
             encoder.start()
 
             muxer = MediaMuxer(outPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            val codec = encoder
-            val mp4 = muxer
+            val codec = checkNotNull(encoder)
+            val mp4 = checkNotNull(muxer)
             val info = MediaCodec.BufferInfo()
             var trackIndex = -1
             var formatSeen = false
