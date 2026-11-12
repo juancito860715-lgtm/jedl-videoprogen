@@ -139,7 +139,9 @@ class MainActivity : ComponentActivity() {
     @Volatile private var faceFitH = 0f
     private lateinit var projectRepository: ProjectRepository
     private lateinit var projectAssetStore: ProjectAssetStore
-    private val projectBitmapCache = LruCache<String, Bitmap>(24 * 1024 * 1024)
+    private val projectBitmapCache = object : LruCache<String, Bitmap>(24 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
+    }
     private var activeProject by mutableStateOf<ProjectDocument?>(null)
     private var showProjectSheet by mutableStateOf(false)
 
@@ -1660,8 +1662,13 @@ class MainActivity : ComponentActivity() {
         val cacheKey = projectId + "/" + relativePath
         projectBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
         return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            projectAssetStore.openAsset(projectId, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
             projectAssetStore.openAsset(projectId, relativePath).use { input ->
-                BitmapFactory.decodeStream(input)?.also { decoded -> projectBitmapCache.put(cacheKey, decoded) }
+                BitmapFactory.decodeStream(input, null, options)?.also { decoded -> projectBitmapCache.put(cacheKey, decoded) }
             }
         } catch (_: Exception) { null }
     }
