@@ -9,6 +9,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
@@ -65,7 +67,27 @@ class ExportService : Service() {
 
         try {
             val tempFile = File(cacheDir, "temp_export.mp4")
-            val exporter = Mp4Exporter(pendingWidth, pendingHeight, 30, 5f)
+            val sceneDuration = (pendingProjectScene?.durationMillis ?: 5_000L).coerceAtLeast(1L)
+            val exporter = Mp4Exporter(pendingWidth, pendingHeight, 30, sceneDuration / 1_000f)
+            val projectId = pendingProjectId
+            val assetStore = if (projectId != null) ProjectAssetStore(this) else null
+            val imageCache = object : LruCache<String, Bitmap>(24 * 1024) {
+                override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
+            }
+            fun resolveExportBitmap(relativePath: String): Bitmap? {
+                val id = projectId ?: return null
+                imageCache.get(relativePath)?.let { if (!it.isRecycled) return it }
+                return try {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    assetStore!!.openAsset(id, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                    assetStore.openAsset(id, relativePath).use { input ->
+                        BitmapFactory.decodeStream(input, null, options)?.also { imageCache.put(relativePath, it) }
+                    }
+                } catch (_: Exception) { null }
+            }
             val ok = exporter.export(tempFile.absolutePath, { pct ->
                 nm.notify(NOTIF_ID, buildNotification("Exportando… $pct%", pct))
                 onStatus?.invoke("Exportando… $pct%")
@@ -77,7 +99,8 @@ class ExportService : Service() {
                     actorX = pendingActorX, actorY = pendingActorY,
                     avatarMode = pendingAvatarMode, avatarSpec = pendingAvatarSpec,
                     avatarFace = pendingAvatarFace, direction = pendingDirection,
-                    projectScene = pendingProjectScene
+                    projectScene = pendingProjectScene,
+                    assetResolver = ::resolveExportBitmap
                 )
             }
 
@@ -101,6 +124,7 @@ class ExportService : Service() {
             pendingAvatarSpec = null
             pendingAvatarFace = null
             pendingProjectScene = null
+            pendingProjectId = null
             stopSelf()
         }
     }
@@ -143,6 +167,7 @@ class ExportService : Service() {
         @Volatile var pendingAvatarFace: Bitmap? = null
         @Volatile var pendingDirection: String = "der"
         @Volatile var pendingProjectScene: SceneDocument? = null
+        @Volatile var pendingProjectId: String? = null
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
@@ -153,7 +178,8 @@ class ExportService : Service() {
             actorX: Float = 0.5f, actorY: Float = 0.55f,
             avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
             avatarFace: Bitmap? = null, direction: String = "der",
-            projectScene: SceneDocument? = null
+            projectScene: SceneDocument? = null,
+            projectId: String? = null
         ) {
             pendingPhoto = photo
             pendingBackground = background
@@ -172,6 +198,7 @@ class ExportService : Service() {
             pendingAvatarFace = avatarFace
             pendingDirection = direction
             pendingProjectScene = projectScene
+            pendingProjectId = projectId
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
