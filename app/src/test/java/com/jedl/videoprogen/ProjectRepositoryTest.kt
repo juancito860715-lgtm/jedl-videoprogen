@@ -22,7 +22,7 @@ class ProjectRepositoryTest {
                 SceneDocument(
                     name = "Escena principal",
                     layers = listOf(
-                        LayerDocument(name = "Personaje", type = LayerType.CHARACTER, zIndex = 1),
+                        LayerDocument(id = "00000000-0000-0000-0000-000000000001", name = "Personaje", type = LayerType.CHARACTER, zIndex = 1),
                         LayerDocument(name = "Título", type = LayerType.TEXT, text = "Hola JEDL", zIndex = 2)
                     ),
                     animationClips = listOf(
