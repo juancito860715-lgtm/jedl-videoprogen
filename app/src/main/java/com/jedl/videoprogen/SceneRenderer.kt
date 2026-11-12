@@ -114,7 +114,7 @@ object SceneRenderer {
             if (timedText.isNotEmpty()) {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = Color.WHITE
-                    textSize = (h * 0.035f).coerceIn(24f, 64f)
+                    this.textSize = (h * 0.035f).coerceIn(24f, 64f)
                     textAlign = Paint.Align.CENTER
                     setShadowLayer(8f, 2f, 3f, Color.BLACK)
                 }
