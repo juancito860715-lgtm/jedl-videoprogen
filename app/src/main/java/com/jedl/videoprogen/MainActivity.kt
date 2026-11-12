@@ -136,6 +136,10 @@ class MainActivity : ComponentActivity() {
     @Volatile private var faceFitT = 0f
     @Volatile private var faceFitW = 0f
     @Volatile private var faceFitH = 0f
+    private lateinit var projectRepository: ProjectRepository
+    private var activeProject by mutableStateOf<ProjectDocument?>(null)
+    private var showProjectSheet by mutableStateOf(false)
+
     // Dirección del caminar/correr (pedido del dueño: ver todas)
     private var direction by mutableStateOf("der")
 
@@ -155,6 +159,7 @@ class MainActivity : ComponentActivity() {
         // TTS inicializado aqui: onInit es asincrono y asi ya esta listo
         // cuando el usuario toca el boton "Voz" por primera vez
         ttsManager = TtsManager(this)
+        projectRepository = ProjectRepository(this)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
@@ -185,7 +190,10 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column {
                                 Text("JEDL Studio", color = Gold, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                Text("Proyecto sin título", color = TextGray, fontSize = 12.sp)
+                                Text(activeProject?.name ?: "Proyecto sin título", color = TextGray, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { showProjectSheet = true }) {
+                                Text("Proyectos", color = Gold, fontSize = 12.sp)
                             }
                             if (showExportBtn) {
                                 Button(
@@ -476,6 +484,32 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Personaje (FASE B)
                     if (showAvatarSheet) AvatarSheet()
+
+                    if (showProjectSheet) {
+                        ProjectManagerSheet(
+                            repository = projectRepository,
+                            currentProject = activeProject,
+                            onCreate = { name ->
+                                activeProject = projectRepository.save(ProjectRepository.newProject(name))
+                                statusMsg = "Proyecto creado y guardado"
+                            },
+                            onSave = { project ->
+                                activeProject = projectRepository.save(project)
+                                statusMsg = "Proyecto guardado en este teléfono"
+                            },
+                            onOpen = { project ->
+                                activeProject = project
+                                statusMsg = "Proyecto abierto"
+                                drawPreview()
+                            },
+                            onChange = { project ->
+                                activeProject = projectRepository.save(project)
+                                statusMsg = "Capa añadida y proyecto guardado"
+                                drawPreview()
+                            },
+                            onDismiss = { showProjectSheet = false }
+                        )
+                    }
                 }
             }
         }
@@ -1640,7 +1674,8 @@ class MainActivity : ComponentActivity() {
                     actorX = actorX, actorY = actorY,
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
-                    direction = direction
+                    direction = direction,
+                    projectScene = activeProject?.scenes?.firstOrNull()
                 )
                 canvas.restore()
             } else {
