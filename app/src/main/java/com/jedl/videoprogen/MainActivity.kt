@@ -1697,7 +1697,12 @@ class MainActivity : ComponentActivity() {
         // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
         val hasProjectVisual = activeProject?.scenes?.firstOrNull()
             ?.let(ProjectSceneContent::hasRenderableVisual) == true
-        if (photo == null && !avatarMode && !hasProjectVisual) { statusMsg = "Importa una imagen, añade texto o activa un Personaje"; return }
+        val hasExportableVisual = if (activeProject != null) hasProjectVisual
+            else photo != null || (avatarMode && avatarSpec != null)
+        if (!hasExportableVisual) {
+            statusMsg = "Añade una capa visual exportable o activa un Personaje"
+            return
+        }
         statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
         ExportService.start(
