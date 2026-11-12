@@ -37,8 +37,8 @@ class ProjectAnimationMapperTest {
         val source = MotionTemplate(
             "Too dense",
             listOf(
-                PoseFrame(0.1000f, Pose(mapOf("armUR" to 0f))),
-                PoseFrame(0.1001f, Pose(mapOf("armUR" to 10f)))
+                PoseFrame(0.1000f, Pose(mapOf("armUR" to 0f), bob = 0f, sway = 0f)),
+                PoseFrame(0.1001f, Pose(mapOf("armUR" to 10f), bob = 0f, sway = 0f))
             ),
             loop = false
         )
