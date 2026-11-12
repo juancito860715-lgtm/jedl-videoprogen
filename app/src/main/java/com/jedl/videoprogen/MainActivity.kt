@@ -1642,7 +1642,8 @@ class MainActivity : ComponentActivity() {
         ExportService.start(
             this, photo, backgroundPhoto, mesh, textOverlay, template, w, h,
             textX, textY, textSizePx, actorX, actorY,
-            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction
+            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction,
+            activeProject?.scenes?.firstOrNull()
         )
     }
 
