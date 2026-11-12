@@ -22,7 +22,19 @@ class ProjectRepositoryTest {
                 SceneDocument(
                     name = "Escena principal",
                     layers = listOf(
+                        LayerDocument(name = "Personaje", type = LayerType.CHARACTER, zIndex = 1),
                         LayerDocument(name = "Título", type = LayerType.TEXT, text = "Hola JEDL", zIndex = 2)
+                    ),
+                    animationClips = listOf(
+                        AnimationClipDocument(
+                            name = "Saludo",
+                            targetLayerId = "00000000-0000-0000-0000-000000000001",
+                            durationMillis = 1000L,
+                            keyframes = listOf(
+                                AnimationKeyframeDocument(0L, mapOf("armUR" to -120f)),
+                                AnimationKeyframeDocument(1000L, mapOf("armUR" to -90f), rootBob = 0.01f)
+                            )
+                        )
                     )
                 )
             )
@@ -32,7 +44,11 @@ class ProjectRepositoryTest {
         val loaded = repository.load(saved.id)
         assertEquals(saved.id, loaded.id)
         assertEquals("Corto de prueba", loaded.name)
-        assertEquals("Hola JEDL", loaded.scenes.first().layers.first().text)
+        assertEquals("Hola JEDL", loaded.scenes.first().layers.first { it.type == LayerType.TEXT }.text)
+        val restoredClip = loaded.scenes.first().animationClips.single()
+        assertEquals("Saludo", restoredClip.name)
+        assertEquals("00000000-0000-0000-0000-000000000001", restoredClip.targetLayerId)
+        assertEquals(-90f, restoredClip.keyframes.last().boneAngles["armUR"]!!)
         assertEquals(1, repository.list().size)
         assertTrue(repository.delete(saved.id))
         assertFalse(repository.delete(saved.id))
