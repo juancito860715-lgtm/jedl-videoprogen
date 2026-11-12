@@ -62,6 +62,21 @@ enum class LayerType {
  * assetPath siempre es una ruta relativa dentro de la carpeta del proyecto.
  * Nunca debe contener rutas absolutas ni segmentos '..'.
  */
+data class CharacterAppearanceDocument(
+    val name: String,
+    val skin: Int,
+    val hair: Int,
+    val hairStyle: Int,
+    val shirt: Int,
+    val pants: Int,
+    val shoes: Int,
+    val beard: Boolean,
+    val enabled: Boolean = true,
+    val direction: String = "der",
+    val actorX: Float = 0.5f,
+    val actorY: Float = 0.55f
+)
+
 data class LayerDocument(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "Capa",
@@ -71,6 +86,7 @@ data class LayerDocument(
     val opacity: Float = 1f,
     val transform: Transform2D = Transform2D(),
     val assetPath: String? = null,
+    val characterAppearance: CharacterAppearanceDocument? = null,
     val text: String = "",
     val startMillis: Long = 0L,
     val durationMillis: Long = 5_000L,
@@ -124,6 +140,12 @@ object ProjectDocumentValidator {
                 }
                 val path = layer.assetPath
                 if (path != null && !isSafeRelativeAssetPath(path)) return "Ruta de recurso no segura"
+                layer.characterAppearance?.let { appearance ->
+                    if (layer.type != LayerType.CHARACTER) return "La apariencia solo puede pertenecer a una capa de personaje"
+                    if (appearance.name.isBlank() || appearance.name.length > 120 || appearance.hairStyle !in 0..4) return "Apariencia de personaje no válida"
+                    if (appearance.direction !in setOf("der", "izq", "espalda", "frente", "3/4")) return "Dirección de personaje no válida"
+                    if (!appearance.actorX.isFinite() || !appearance.actorY.isFinite() || appearance.actorX !in 0f..1f || appearance.actorY !in 0f..1f) return "Posición del personaje no válida"
+                }
             }
             val timelineError = TimelineDocumentValidator.validate(scene.timelineTracks, scene.durationMillis)
             if (timelineError != null) return timelineError
