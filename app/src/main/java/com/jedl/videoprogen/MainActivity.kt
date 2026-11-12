@@ -516,6 +516,7 @@ class MainActivity : ComponentActivity() {
                     if (showAnimationEditorSheet && activeProject != null) {
                         ProjectAnimationEditorSheet(
                             project = activeProject!!,
+                            initialSelectedClipId = selectedProjectAnimationClipId,
                             onChange = { changed ->
                                 activeProject = projectRepository.save(changed)
                                 restoreProjectCharacterAndAnimation(activeProject!!, selectedProjectAnimationClipId)
