@@ -202,12 +202,44 @@ class ProjectRepository private constructor(private val root: File) {
                     zIndex = layerJson.optInt("zIndex", 0)
                 ))
             }
+            val clipsJson = sceneJson.optJSONArray("animationClips") ?: JSONArray()
+            val clips = ArrayList<AnimationClipDocument>(clipsJson.length())
+            for (clipIndex in 0 until clipsJson.length()) {
+                val clipJson = clipsJson.getJSONObject(clipIndex)
+                val framesJson = clipJson.getJSONArray("keyframes")
+                val frames = ArrayList<AnimationKeyframeDocument>(framesJson.length())
+                for (frameIndex in 0 until framesJson.length()) {
+                    val frameJson = framesJson.getJSONObject(frameIndex)
+                    val anglesJson = frameJson.optJSONObject("boneAngles") ?: JSONObject()
+                    val angles = LinkedHashMap<String, Float>()
+                    val keys = anglesJson.keys()
+                    while (keys.hasNext()) {
+                        val bone = keys.next()
+                        angles[bone] = anglesJson.getDouble(bone).toFloat()
+                    }
+                    frames.add(AnimationKeyframeDocument(
+                        timeMillis = frameJson.getLong("timeMillis"),
+                        boneAngles = angles,
+                        rootBob = frameJson.optDouble("rootBob", 0.0).toFloat(),
+                        rootSway = frameJson.optDouble("rootSway", 0.0).toFloat()
+                    ))
+                }
+                clips.add(AnimationClipDocument(
+                    id = clipJson.getString("id"),
+                    name = clipJson.getString("name"),
+                    targetLayerId = clipJson.getString("targetLayerId"),
+                    durationMillis = clipJson.optLong("durationMillis", 5_000L),
+                    loop = clipJson.optBoolean("loop", false),
+                    keyframes = frames
+                ))
+            }
             scenes.add(SceneDocument(
                 id = sceneJson.getString("id"),
                 name = sceneJson.getString("name"),
                 durationMillis = sceneJson.optLong("durationMillis", 5_000L),
                 backgroundColor = sceneJson.optInt("backgroundColor", 0xFF101116.toInt()),
-                layers = layers
+                layers = layers,
+                animationClips = clips
             ))
         }
         return ProjectDocument(
