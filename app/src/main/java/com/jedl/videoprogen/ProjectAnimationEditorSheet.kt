@@ -33,11 +33,17 @@ import androidx.compose.ui.unit.dp
 fun ProjectAnimationEditorSheet(
     project: ProjectDocument,
     onChange: (ProjectDocument) -> Unit,
+    initialSelectedClipId: String? = null,
     onSelectClip: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val scene = project.scenes.first()
-    var selectedClipId by remember(project.id) { mutableStateOf(scene.animationClips.firstOrNull()?.id ?: "") }
+    var selectedClipId by remember(project.id, initialSelectedClipId) {
+        mutableStateOf(
+            scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.id
+                ?: scene.animationClips.firstOrNull()?.id.orEmpty()
+        )
+    }
     var selectedTime by remember(project.id) { mutableStateOf(0L) }
     var timeText by remember(project.id) { mutableStateOf("0") }
     var boneName by remember(project.id) { mutableStateOf("armUR") }
