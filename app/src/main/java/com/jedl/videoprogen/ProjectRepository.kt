@@ -138,6 +138,22 @@ class ProjectRepository private constructor(private val root: File) {
                         put("rotationDegrees", t.rotationDegrees.toDouble())
                     })
                     put("assetPath", layer.assetPath ?: JSONObject.NULL)
+                    put("characterAppearance", layer.characterAppearance?.let { appearance ->
+                        JSONObject().apply {
+                            put("name", appearance.name)
+                            put("skin", appearance.skin)
+                            put("hair", appearance.hair)
+                            put("hairStyle", appearance.hairStyle)
+                            put("shirt", appearance.shirt)
+                            put("pants", appearance.pants)
+                            put("shoes", appearance.shoes)
+                            put("beard", appearance.beard)
+                            put("enabled", appearance.enabled)
+                            put("direction", appearance.direction)
+                            put("actorX", appearance.actorX.toDouble())
+                            put("actorY", appearance.actorY.toDouble())
+                        }
+                    } ?: JSONObject.NULL)
                     put("text", layer.text)
                     put("startMillis", layer.startMillis)
                     put("durationMillis", layer.durationMillis)
@@ -230,6 +246,23 @@ class ProjectRepository private constructor(private val root: File) {
                     throw IOException("Tipo de capa desconocido: $rawType")
                 }
                 val asset = layerJson.opt("assetPath")
+                val appearanceJson = layerJson.optJSONObject("characterAppearance")
+                val appearance = appearanceJson?.let { json ->
+                    CharacterAppearanceDocument(
+                        name = json.getString("name"),
+                        skin = json.getInt("skin"),
+                        hair = json.getInt("hair"),
+                        hairStyle = json.getInt("hairStyle"),
+                        shirt = json.getInt("shirt"),
+                        pants = json.getInt("pants"),
+                        shoes = json.getInt("shoes"),
+                        beard = json.optBoolean("beard", false),
+                        enabled = json.optBoolean("enabled", true),
+                        direction = json.optString("direction", "der"),
+                        actorX = json.optDouble("actorX", 0.5).toFloat(),
+                        actorY = json.optDouble("actorY", 0.55).toFloat()
+                    )
+                }
                 layers.add(LayerDocument(
                     id = layerJson.getString("id"),
                     name = layerJson.getString("name"),
@@ -245,6 +278,7 @@ class ProjectRepository private constructor(private val root: File) {
                         rotationDegrees = transformJson.optDouble("rotationDegrees", 0.0).toFloat()
                     ),
                     assetPath = if (asset == null || asset == JSONObject.NULL) null else asset.toString(),
+                    characterAppearance = appearance,
                     text = layerJson.optString("text", ""),
                     startMillis = layerJson.optLong("startMillis", 0L),
                     durationMillis = layerJson.optLong("durationMillis", 5_000L),
