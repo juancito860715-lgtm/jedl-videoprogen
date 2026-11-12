@@ -1,7 +1,7 @@
 name: Build APK
 on: [push, workflow_dispatch]
 permissions:
-  contents: write
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -17,19 +17,6 @@ jobs:
         with:
           path: /home/runner/.gradle/wrapper/dists
           key: gradle-dist-8-4-v1
-      - name: Ensure fixed keystore (stable signature for updates)
-        run: |
-          if [ ! -f debug.keystore ]; then
-            keytool -genkeypair -keystore debug.keystore -storetype PKCS12 \
-              -storepass jedl2026 -keypass jedl2026 -alias jedl \
-              -keyalg RSA -keysize 2048 -validity 10950 \
-              -dname "CN=JEDL Studio, O=JEDL, C=CU"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add debug.keystore
-            git commit -m "Add fixed debug keystore (stable signing)"
-            git push
-          fi
       - name: Download MediaPipe + CartoonGAN models
         run: |
           mkdir -p app/src/main/assets
@@ -75,6 +62,9 @@ jobs:
           fi
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
+      - name: Run unit tests
+        run: |
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace
       - name: Build debug APK
         run: |
           set +e
