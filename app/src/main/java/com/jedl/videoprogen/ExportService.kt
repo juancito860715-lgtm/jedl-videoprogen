@@ -76,7 +76,8 @@ class ExportService : Service() {
                     textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize,
                     actorX = pendingActorX, actorY = pendingActorY,
                     avatarMode = pendingAvatarMode, avatarSpec = pendingAvatarSpec,
-                    avatarFace = pendingAvatarFace, direction = pendingDirection
+                    avatarFace = pendingAvatarFace, direction = pendingDirection,
+                    projectScene = pendingProjectScene
                 )
             }
 
@@ -99,6 +100,7 @@ class ExportService : Service() {
             // pertenece a la MainActivity, no se recicla aquí)
             pendingAvatarSpec = null
             pendingAvatarFace = null
+            pendingProjectScene = null
             stopSelf()
         }
     }
@@ -140,6 +142,7 @@ class ExportService : Service() {
         @Volatile var pendingAvatarSpec: AvatarSpec? = null
         @Volatile var pendingAvatarFace: Bitmap? = null
         @Volatile var pendingDirection: String = "der"
+        @Volatile var pendingProjectScene: SceneDocument? = null
         @Volatile var onStatus: ((String) -> Unit)? = null
 
         fun start(
@@ -149,7 +152,8 @@ class ExportService : Service() {
             textX: Float, textY: Float, textSize: Float,
             actorX: Float = 0.5f, actorY: Float = 0.55f,
             avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
-            avatarFace: Bitmap? = null, direction: String = "der"
+            avatarFace: Bitmap? = null, direction: String = "der",
+            projectScene: SceneDocument? = null
         ) {
             pendingPhoto = photo
             pendingBackground = background
@@ -167,6 +171,7 @@ class ExportService : Service() {
             pendingAvatarSpec = avatarSpec
             pendingAvatarFace = avatarFace
             pendingDirection = direction
+            pendingProjectScene = projectScene
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
