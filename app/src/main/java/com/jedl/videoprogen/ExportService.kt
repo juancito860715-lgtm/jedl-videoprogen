@@ -63,6 +63,15 @@ class ExportService : Service() {
         val hasRenderableOutput = if (pendingProjectScene != null) hasProjectVisual else hasLegacyVisual
         if (!hasRenderableOutput) {
             onStatus?.invoke("La escena no contiene elementos visuales exportables")
+            pendingPhoto = null
+            pendingBackground = null
+            pendingMesh = null
+            pendingAvatarSpec = null
+            pendingAvatarFace = null
+            pendingProjectScene = null
+            pendingProjectId = null
+            pendingText = ""
+            pendingFrameRate = 30
             synchronized(exportLock) { exportInProgress = false }
             stopSelf()
             return
