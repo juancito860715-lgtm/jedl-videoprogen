@@ -32,7 +32,25 @@ data class SceneDocument(
     val name: String = "Escena 1",
     val durationMillis: Long = 5_000L,
     val backgroundColor: Int = 0xFF101116.toInt(),
-    val layers: List<LayerDocument> = emptyList()
+    val layers: List<LayerDocument> = emptyList(),
+    val animationClips: List<AnimationClipDocument> = emptyList()
+)
+
+/** Estado de animación serializable; no depende de clases Android del motor. */
+data class AnimationClipDocument(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "Animación",
+    val targetLayerId: String,
+    val durationMillis: Long = 5_000L,
+    val loop: Boolean = false,
+    val keyframes: List<AnimationKeyframeDocument> = emptyList()
+)
+
+data class AnimationKeyframeDocument(
+    val timeMillis: Long,
+    val boneAngles: Map<String, Float>,
+    val rootBob: Float = 0f,
+    val rootSway: Float = 0f
 )
 
 enum class LayerType {
@@ -105,6 +123,22 @@ object ProjectDocumentValidator {
                 }
                 val path = layer.assetPath
                 if (path != null && !isSafeRelativeAssetPath(path)) return "Ruta de recurso no segura"
+            }
+            val clipIds = HashSet<String>()
+            for (clip in scene.animationClips) {
+                if (!safeId.matches(clip.id) || !clipIds.add(clip.id)) return "ID de animación no válido o duplicado"
+                if (clip.name.isBlank() || clip.name.length > 120) return "Nombre de animación no válido"
+                if (clip.durationMillis !in 1L..3_600_000L) return "Duración de animación no válida"
+                if (scene.layers.none { it.id == clip.targetLayerId && it.type == LayerType.CHARACTER }) return "La animación debe apuntar a una capa de personaje existente"
+                if (clip.keyframes.isEmpty() || clip.keyframes.size > 10_000) return "Cantidad de keyframes no válida"
+                var previousTime = -1L
+                for (keyframe in clip.keyframes) {
+                    if (keyframe.timeMillis !in 0L..clip.durationMillis || keyframe.timeMillis <= previousTime) return "Orden o tiempo de keyframes no válido"
+                    previousTime = keyframe.timeMillis
+                    if (!keyframe.rootBob.isFinite() || !keyframe.rootSway.isFinite()) return "Desplazamiento raíz no válido"
+                    if (keyframe.rootBob !in -4f..4f || keyframe.rootSway !in -4f..4f) return "Desplazamiento raíz fuera de límites"
+                    if (keyframe.boneAngles.size > 128 || keyframe.boneAngles.any { (bone, angle) -> bone.isBlank() || bone.length > 64 || !angle.isFinite() || angle !in -360f..360f }) return "Ángulos de huesos no válidos"
+                }
             }
         }
         return null
