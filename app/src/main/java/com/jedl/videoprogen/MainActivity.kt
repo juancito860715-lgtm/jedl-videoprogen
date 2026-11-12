@@ -1702,7 +1702,8 @@ class MainActivity : ComponentActivity() {
             this, photo, backgroundPhoto, mesh, textOverlay, template, w, h,
             textX, textY, textSizePx, actorX, actorY,
             avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction,
-            activeProject?.scenes?.firstOrNull()
+            activeProject?.scenes?.firstOrNull(),
+            activeProject?.id
         )
     }
 
