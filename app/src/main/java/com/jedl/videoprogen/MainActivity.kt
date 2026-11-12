@@ -1720,7 +1720,7 @@ class MainActivity : ComponentActivity() {
                     type = trackType
                 )
                 val clip = TimelineClipDocument(
-                    name = imported.originalName.take(100).ifBlank { if (trackType == TimelineTrackType.VIDEO) "Vídeo importado" else "Audio importado" },
+                    name = (uri.lastPathSegment ?: "media.bin").substringAfterLast("/").take(100),
                     assetPath = imported.relativePath,
                     startMillis = 0L,
                     durationMillis = duration,
