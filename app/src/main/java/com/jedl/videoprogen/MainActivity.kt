@@ -743,7 +743,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.weight(1f)
                         ) { Text("Recortar cara (IA)", color = Gold, fontSize = 11.sp) }
                         Button(
-                            onClick = { showAvatarSheet = false; faceEditMode = true; drawPreview() },
+                            onClick = { persistCharacterAppearance(); showAvatarSheet = false; faceEditMode = true; drawPreview() },
                             colors = ButtonDefaults.buttonColors(containerColor = Panel),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
@@ -1741,7 +1741,7 @@ class MainActivity : ComponentActivity() {
                 val duration = sourceDuration.coerceIn(1L, scene.durationMillis)
                 val existing = scene.timelineTracks.firstOrNull { it.type == trackType }
                 val track = existing ?: TimelineTrackDocument(
-                    name = if (trackType == TimelineTrackType.VIDEO) "Vídeo" else "Audio",
+                    name = when (trackType) { TimelineTrackType.VIDEO -> "Vídeo"; TimelineTrackType.VOICE -> "Voz"; TimelineTrackType.MUSIC -> "Música"; else -> "Audio" },
                     type = trackType
                 )
                 val clip = TimelineClipDocument(
