@@ -533,6 +533,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onOpen = { project ->
                                 activeProject = project
+                                restoreProjectCharacterAndAnimation(project)
                                 statusMsg = "Proyecto abierto"
                                 drawPreview()
                             },
@@ -672,7 +673,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun AvatarSheet() {
         ModalBottomSheet(
-            onDismissRequest = { showAvatarSheet = false },
+            onDismissRequest = { persistCharacterAppearance(); showAvatarSheet = false },
             containerColor = Panel
         ) {
             Column(
@@ -1626,6 +1627,7 @@ class MainActivity : ComponentActivity() {
         }
         val mt = MotionTemplate("Mi animación " + (userTemplates.size + 1), frames, loop = false)
         userTemplates.add(mt)
+        persistMotionToProject(mt)
         poseMode = false
         customPose = null
         activeLimb = 0
@@ -1741,6 +1743,101 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { Toast.makeText(this, error.message ?: "No se pudo importar el medio", Toast.LENGTH_LONG).show() }
             }
         }.start()
+    }
+
+    private fun currentCharacterAppearance() = CharacterAppearanceDocument(
+        name = avatarSpec.name,
+        skin = avatarSpec.skin,
+        hair = avatarSpec.hair,
+        hairStyle = avatarSpec.hairStyle,
+        shirt = avatarSpec.shirt,
+        pants = avatarSpec.pants,
+        shoes = avatarSpec.shoes,
+        beard = avatarSpec.beard,
+        enabled = avatarMode,
+        direction = direction,
+        actorX = actorX,
+        actorY = actorY
+    )
+
+    private fun persistCharacterAppearance() {
+        val project = activeProject ?: run {
+            statusMsg = "Crea un proyecto para guardar el personaje"
+            return
+        }
+        try {
+            val scene = project.scenes.first()
+            val existing = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+            val character = (existing ?: LayerDocument(name = avatarSpec.name, type = LayerType.CHARACTER)).copy(
+                name = avatarSpec.name,
+                characterAppearance = currentCharacterAppearance(),
+                transform = Transform2D(x = actorX, y = actorY)
+            )
+            val layers = if (existing == null) scene.layers + character
+                else scene.layers.map { if (it.id == existing.id) character else it }
+            activeProject = projectRepository.save(project.copy(
+                scenes = listOf(scene.copy(layers = layers)) + project.scenes.drop(1)
+            ))
+            statusMsg = "Apariencia del personaje guardada"
+        } catch (error: Exception) {
+            statusMsg = "No se pudo guardar el personaje: " + (error.message ?: "error")
+        }
+    }
+
+    private fun persistMotionToProject(motion: MotionTemplate) {
+        try {
+            var project = activeProject ?: projectRepository.save(ProjectRepository.newProject("Mi proyecto"))
+            val scene = project.scenes.first()
+            val existing = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+            val character = (existing ?: LayerDocument(name = avatarSpec.name, type = LayerType.CHARACTER)).copy(
+                name = avatarSpec.name,
+                characterAppearance = currentCharacterAppearance(),
+                transform = Transform2D(x = actorX, y = actorY)
+            )
+            val layers = if (existing == null) scene.layers + character
+                else scene.layers.map { if (it.id == existing.id) character else it }
+            val clip = ProjectAnimationMapper.fromMotionTemplate(
+                motion, character.id, scene.durationMillis, loop = motion.loop
+            )
+            val updatedScene = scene.copy(
+                layers = layers,
+                animationClips = scene.animationClips.filterNot { it.targetLayerId == character.id && it.name == motion.name } + clip
+            )
+            project = projectRepository.save(project.copy(
+                scenes = listOf(updatedScene) + project.scenes.drop(1)
+            ))
+            activeProject = project
+            statusMsg = "Personaje y animación guardados en el proyecto"
+        } catch (error: Exception) {
+            statusMsg = "No se pudo guardar la animación: " + (error.message ?: "error")
+        }
+    }
+
+    private fun restoreProjectCharacterAndAnimation(project: ProjectDocument) {
+        val scene = project.scenes.firstOrNull() ?: return
+        val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+        val appearance = character?.characterAppearance
+        if (appearance != null) {
+            avatarSpec = AvatarSpec(
+                appearance.name, appearance.skin, appearance.hair, appearance.hairStyle,
+                appearance.shirt, appearance.pants, appearance.shoes, appearance.beard
+            )
+            avatarMode = appearance.enabled
+            direction = appearance.direction
+            actorX = appearance.actorX
+            actorY = appearance.actorY
+        }
+        val clip = character?.let { target -> scene.animationClips.firstOrNull { it.targetLayerId == target.id } }
+        if (clip != null) {
+            try {
+                val restored = ProjectAnimationMapper.toMotionTemplate(clip)
+                userTemplates.add(restored)
+                templatePrev = template
+                template = ActiveTemplate(null, restored)
+            } catch (_: Exception) {
+                statusMsg = "El personaje se abrió, pero su animación no pudo restaurarse"
+            }
+        }
     }
 
     private fun importProjectImage(uri: Uri) {
