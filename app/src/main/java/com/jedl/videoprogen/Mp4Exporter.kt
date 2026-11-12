@@ -6,10 +6,17 @@ import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import java.io.File
+import kotlin.math.ceil
 
 class Mp4Exporter(private val width: Int, private val height: Int, private val fps: Int, private val durationSeconds: Float) {
+    init {
+        require(width >= 64 && height >= 64 && width % 2 == 0 && height % 2 == 0) { "Dimensiones de exportación no válidas" }
+        require(fps in 1..60) { "FPS de exportación fuera de rango" }
+        require(durationSeconds.isFinite() && durationSeconds > 0f) { "Duración de exportación no válida" }
+    }
+
     fun export(outPath: String, onProgress: (Int) -> Unit, renderFrame: (Float) -> Bitmap): Boolean {
-        val totalFrames = (fps * durationSeconds).toInt()
+        val totalFrames = ceil(fps * durationSeconds).toInt().coerceAtLeast(1)
         val format = MediaFormat.createVideoFormat("video/avc", width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
             setInteger(MediaFormat.KEY_BIT_RATE, 4_000_000)
