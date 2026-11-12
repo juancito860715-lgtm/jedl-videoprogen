@@ -79,7 +79,7 @@ object SceneRenderer {
 
             if (drawSkeleton && layer == null) {
                 val linePaint = Paint().apply {
-                    color = Color.parseColor("#F5B841"); strokeWidth = 3f; style = Paint.Style.STROKE
+                    color = Color.parseColor("#F5B841"); strokeWidth = 3f / unit; style = Paint.Style.STROKE
                 }
                 val jointPaint = Paint().apply { color = Color.parseColor("#E87722") }
                 for (bone in PuppetRig.HUMANOID.bones) {
