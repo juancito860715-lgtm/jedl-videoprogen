@@ -166,6 +166,31 @@ class ProjectRepository private constructor(private val root: File) {
                     put("keyframes", keyframes)
                 })
             }
+            val tracks = JSONArray()
+            scene.timelineTracks.forEach { track ->
+                val trackClips = JSONArray()
+                track.clips.forEach { clip ->
+                    trackClips.put(JSONObject().apply {
+                        put("id", clip.id)
+                        put("name", clip.name)
+                        put("assetPath", clip.assetPath ?: JSONObject.NULL)
+                        put("startMillis", clip.startMillis)
+                        put("durationMillis", clip.durationMillis)
+                        put("sourceStartMillis", clip.sourceStartMillis)
+                        put("sourceEndMillis", clip.sourceEndMillis ?: JSONObject.NULL)
+                        put("volume", clip.volume.toDouble())
+                        put("text", clip.text)
+                    })
+                }
+                tracks.put(JSONObject().apply {
+                    put("id", track.id)
+                    put("name", track.name)
+                    put("type", track.type.name)
+                    put("muted", track.muted)
+                    put("locked", track.locked)
+                    put("clips", trackClips)
+                })
+            }
             scenes.put(JSONObject().apply {
                 put("id", scene.id)
                 put("name", scene.name)
@@ -173,6 +198,7 @@ class ProjectRepository private constructor(private val root: File) {
                 put("backgroundColor", scene.backgroundColor)
                 put("layers", layers)
                 put("animationClips", clips)
+                put("timelineTracks", tracks)
             })
         }
         return JSONObject().apply {
@@ -256,13 +282,49 @@ class ProjectRepository private constructor(private val root: File) {
                     keyframes = frames
                 ))
             }
+            val tracksJson = sceneJson.optJSONArray("timelineTracks") ?: JSONArray()
+            val tracks = ArrayList<TimelineTrackDocument>(tracksJson.length())
+            for (trackIndex in 0 until tracksJson.length()) {
+                val trackJson = tracksJson.getJSONObject(trackIndex)
+                val rawTrackType = trackJson.getString("type")
+                val trackType = try { TimelineTrackType.valueOf(rawTrackType) } catch (_: Exception) {
+                    throw IOException("Tipo de pista desconocido: $rawTrackType")
+                }
+                val trackClipsJson = trackJson.optJSONArray("clips") ?: JSONArray()
+                val trackClips = ArrayList<TimelineClipDocument>(trackClipsJson.length())
+                for (trackClipIndex in 0 until trackClipsJson.length()) {
+                    val clipJson = trackClipsJson.getJSONObject(trackClipIndex)
+                    val rawAsset = clipJson.opt("assetPath")
+                    val rawSourceEnd = clipJson.opt("sourceEndMillis")
+                    trackClips.add(TimelineClipDocument(
+                        id = clipJson.getString("id"),
+                        name = clipJson.getString("name"),
+                        assetPath = if (rawAsset == null || rawAsset == JSONObject.NULL) null else rawAsset.toString(),
+                        startMillis = clipJson.optLong("startMillis", 0L),
+                        durationMillis = clipJson.optLong("durationMillis", 1_000L),
+                        sourceStartMillis = clipJson.optLong("sourceStartMillis", 0L),
+                        sourceEndMillis = if (rawSourceEnd == null || rawSourceEnd == JSONObject.NULL) null else (rawSourceEnd as Number).toLong(),
+                        volume = clipJson.optDouble("volume", 1.0).toFloat(),
+                        text = clipJson.optString("text", "")
+                    ))
+                }
+                tracks.add(TimelineTrackDocument(
+                    id = trackJson.getString("id"),
+                    name = trackJson.getString("name"),
+                    type = trackType,
+                    muted = trackJson.optBoolean("muted", false),
+                    locked = trackJson.optBoolean("locked", false),
+                    clips = trackClips
+                ))
+            }
             scenes.add(SceneDocument(
                 id = sceneJson.getString("id"),
                 name = sceneJson.getString("name"),
                 durationMillis = sceneJson.optLong("durationMillis", 5_000L),
                 backgroundColor = sceneJson.optInt("backgroundColor", 0xFF101116.toInt()),
                 layers = layers,
-                animationClips = clips
+                animationClips = clips,
+                timelineTracks = tracks
             ))
         }
         return ProjectDocument(
