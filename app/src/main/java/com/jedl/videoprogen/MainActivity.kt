@@ -1743,7 +1743,8 @@ class MainActivity : ComponentActivity() {
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
                     direction = direction,
-                    projectScene = activeProject?.scenes?.firstOrNull()
+                    projectScene = activeProject?.scenes?.firstOrNull(),
+                    assetResolver = ::resolveProjectBitmap
                 )
             }
             if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)
