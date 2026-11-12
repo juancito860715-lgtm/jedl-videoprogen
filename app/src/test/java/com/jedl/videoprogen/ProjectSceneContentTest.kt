@@ -25,6 +25,17 @@ class ProjectSceneContentTest {
         assertFalse(ProjectSceneContent.hasRenderableVisual(scene))
     }
 
+    @Test fun timedTextAndSubtitleTracksCanRenderWithoutLayers() {
+        val scene = SceneDocument(timelineTracks = listOf(
+            TimelineTrackDocument(
+                name = "Subtítulos",
+                type = TimelineTrackType.SUBTITLE,
+                clips = listOf(TimelineClipDocument(name = "Entrada", text = "Hola", startMillis = 500L))
+            )
+        ))
+        assertTrue(ProjectSceneContent.hasRenderableVisual(scene))
+    }
+
     @Test fun videoAndAudioLayersAreNotAdvertisedAsRenderableYet() {
         val scene = SceneDocument(layers = listOf(
             LayerDocument(type = LayerType.VIDEO, assetPath = "assets/clip.mp4"),
