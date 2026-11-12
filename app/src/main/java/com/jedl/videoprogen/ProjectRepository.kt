@@ -144,12 +144,35 @@ class ProjectRepository private constructor(private val root: File) {
                     put("zIndex", layer.zIndex)
                 })
             }
+            val clips = JSONArray()
+            scene.animationClips.forEach { clip ->
+                val keyframes = JSONArray()
+                clip.keyframes.forEach { keyframe ->
+                    val angles = JSONObject()
+                    keyframe.boneAngles.forEach { (bone, angle) -> angles.put(bone, angle.toDouble()) }
+                    keyframes.put(JSONObject().apply {
+                        put("timeMillis", keyframe.timeMillis)
+                        put("boneAngles", angles)
+                        put("rootBob", keyframe.rootBob.toDouble())
+                        put("rootSway", keyframe.rootSway.toDouble())
+                    })
+                }
+                clips.put(JSONObject().apply {
+                    put("id", clip.id)
+                    put("name", clip.name)
+                    put("targetLayerId", clip.targetLayerId)
+                    put("durationMillis", clip.durationMillis)
+                    put("loop", clip.loop)
+                    put("keyframes", keyframes)
+                })
+            }
             scenes.put(JSONObject().apply {
                 put("id", scene.id)
                 put("name", scene.name)
                 put("durationMillis", scene.durationMillis)
                 put("backgroundColor", scene.backgroundColor)
                 put("layers", layers)
+                put("animationClips", clips)
             })
         }
         return JSONObject().apply {
