@@ -70,3 +70,55 @@ class ProjectDocumentValidatorTest {
         assertNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(scene))))
     }
 }
+    @Test
+    fun validatesTimelineMediaAndSubtitleClips() {
+        val scene = SceneDocument(
+            durationMillis = 5_000L,
+            timelineTracks = listOf(
+                TimelineTrackDocument(
+                    name = "Música",
+                    type = TimelineTrackType.MUSIC,
+                    clips = listOf(TimelineClipDocument(
+                        name = "Base",
+                        assetPath = "assets/audio.wav",
+                        startMillis = 500L,
+                        durationMillis = 2_000L,
+                        volume = 0.8f
+                    ))
+                ),
+                TimelineTrackDocument(
+                    name = "Subtítulos",
+                    type = TimelineTrackType.SUBTITLE,
+                    clips = listOf(TimelineClipDocument(
+                        name = "Texto",
+                        startMillis = 0L,
+                        durationMillis = 1_500L,
+                        text = "Hola"
+                    ))
+                )
+            )
+        )
+        assertNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(scene))))
+    }
+
+    @Test
+    fun rejectsTimelineClipWithoutMediaAndClipsBeyondScene() {
+        val audioWithoutAsset = SceneDocument(timelineTracks = listOf(
+            TimelineTrackDocument(
+                name = "Audio",
+                type = TimelineTrackType.AUDIO,
+                clips = listOf(TimelineClipDocument(name = "Sin archivo"))
+            )
+        ))
+        assertNotNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(audioWithoutAsset))))
+
+        val outsideScene = SceneDocument(durationMillis = 1_000L, timelineTracks = listOf(
+            TimelineTrackDocument(
+                name = "Subtítulos",
+                type = TimelineTrackType.SUBTITLE,
+                clips = listOf(TimelineClipDocument(name = "Fuera", startMillis = 900L, durationMillis = 200L, text = "Texto"))
+            )
+        ))
+        assertNotNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(outsideScene))))
+    }
+
