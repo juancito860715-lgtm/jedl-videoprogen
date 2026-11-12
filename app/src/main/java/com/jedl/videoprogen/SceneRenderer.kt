@@ -97,12 +97,13 @@ object SceneRenderer {
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
         } else {
+            val scene = requireNotNull(projectScene)
             SceneLayerRenderer.drawLayers(
-                canvas, w, h, projectScene.layers,
+                canvas, w, h, scene.layers,
                 assetResolver ?: { null },
                 sceneTime
             )
-            val timedText = projectScene.timelineTracks
+            val timedText = scene.timelineTracks
                 .filter { !it.muted && it.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) }
                 .flatMap { it.clips }
                 .filter { sceneTime >= it.startMillis && sceneTime - it.startMillis < it.durationMillis && it.text.isNotBlank() }
