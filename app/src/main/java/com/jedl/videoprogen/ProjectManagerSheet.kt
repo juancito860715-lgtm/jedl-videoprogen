@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 fun ProjectManagerSheet(
     repository: ProjectRepository,
     currentProject: ProjectDocument?,
+    onImportResource: () -> Unit,
     onCreate: (String) -> Unit,
     onSave: (ProjectDocument) -> Unit,
     onOpen: (ProjectDocument) -> Unit,
@@ -87,6 +88,8 @@ fun ProjectManagerSheet(
                     label = { Text("Texto para una nueva capa") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                Button(onClick = onImportResource, modifier = Modifier.fillMaxWidth()) { Text("Importar imagen al proyecto") }
+
                 Button(onClick = {
                     if (layerText.isNotBlank()) {
                         val scene = currentProject.scenes.first()
