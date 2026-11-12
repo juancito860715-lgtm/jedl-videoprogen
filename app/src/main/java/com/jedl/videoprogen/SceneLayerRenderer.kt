@@ -34,7 +34,7 @@ object SceneLayerRenderer {
         val imagePaint = requireNotNull(bitmapPaint.get())
         val captionPaint = requireNotNull(textPaint.get())
         layers.asSequence()
-            .filter { it.visible && sceneTimeMillis >= it.startMillis && sceneTimeMillis - it.startMillis < it.durationMillis }
+            .filter { ProjectLayerTiming.isActive(it, sceneTimeMillis) }
             .sortedBy { it.zIndex }
             .forEach { layer ->
                 val save = canvas.save()
