@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
         override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
     }
     private var activeProject by mutableStateOf<ProjectDocument?>(null)
+    private var selectedProjectAnimationClipId by mutableStateOf("")
     private var showProjectSheet by mutableStateOf(false)
     private var showTimelineSheet by mutableStateOf(false)
     private var showAnimationEditorSheet by mutableStateOf(false)
@@ -517,8 +518,13 @@ class MainActivity : ComponentActivity() {
                             project = activeProject!!,
                             onChange = { changed ->
                                 activeProject = projectRepository.save(changed)
-                                restoreProjectCharacterAndAnimation(activeProject!!)
+                                restoreProjectCharacterAndAnimation(activeProject!!, selectedProjectAnimationClipId)
                                 statusMsg = "Keyframe guardado en el proyecto"
+                                drawPreview()
+                            },
+                            onSelectClip = { clipId ->
+                                selectedProjectAnimationClipId = clipId
+                                restoreProjectCharacterAndAnimation(activeProject!!, clipId)
                                 drawPreview()
                             },
                             onDismiss = { showAnimationEditorSheet = false }
@@ -1845,7 +1851,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun restoreProjectCharacterAndAnimation(project: ProjectDocument) {
+    private fun restoreProjectCharacterAndAnimation(project: ProjectDocument, preferredClipId: String? = null) {
         val scene = project.scenes.firstOrNull() ?: return
         templatePrev = ActiveTemplate.of("idle")
         template = ActiveTemplate.of("idle")
@@ -1869,7 +1875,10 @@ class MainActivity : ComponentActivity() {
             actorX = appearance.actorX
             actorY = appearance.actorY
         }
-        val clip = character?.let { target -> scene.animationClips.firstOrNull { it.targetLayerId == target.id } }
+        val characterClips = character?.let { target -> scene.animationClips.filter { it.targetLayerId == target.id } }.orEmpty()
+        val clip = characterClips.firstOrNull { it.id == preferredClipId }
+            ?: characterClips.firstOrNull()
+        selectedProjectAnimationClipId = clip?.id.orEmpty()
         if (clip != null) {
             try {
                 val restored = ProjectAnimationMapper.toMotionTemplate(clip)
