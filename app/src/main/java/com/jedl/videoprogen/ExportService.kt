@@ -59,7 +59,14 @@ class ExportService : Service() {
         val photo = pendingPhoto
         val text = pendingText
         val hasProjectVisual = pendingProjectScene?.let(ProjectSceneContent::hasRenderableVisual) == true
-        if (photo == null && !(pendingAvatarMode && pendingAvatarSpec != null) && !hasProjectVisual) { stopSelf(); return }
+        val hasLegacyVisual = photo != null || (pendingAvatarMode && pendingAvatarSpec != null)
+        val hasRenderableOutput = if (pendingProjectScene != null) hasProjectVisual else hasLegacyVisual
+        if (!hasRenderableOutput) {
+            onStatus?.invoke("La escena no contiene elementos visuales exportables")
+            synchronized(exportLock) { exportInProgress = false }
+            stopSelf()
+            return
+        }
 
         val nm = getSystemService(NotificationManager::class.java)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
