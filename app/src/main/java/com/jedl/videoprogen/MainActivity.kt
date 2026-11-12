@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
     private var activeProject by mutableStateOf<ProjectDocument?>(null)
     private var showProjectSheet by mutableStateOf(false)
     private var showTimelineSheet by mutableStateOf(false)
+    private var showAnimationEditorSheet by mutableStateOf(false)
     private var pendingTimelineType: TimelineTrackType = TimelineTrackType.AUDIO
 
     // Dirección del caminar/correr (pedido del dueño: ver todas)
@@ -211,6 +212,9 @@ class MainActivity : ComponentActivity() {
                             }
                             TextButton(onClick = { showTimelineSheet = true }) {
                                 Text("Timeline", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { showAnimationEditorSheet = true }) {
+                                Text("Poses", color = Gold, fontSize = 12.sp)
                             }
                             if (showExportBtn) {
                                 Button(
@@ -501,6 +505,19 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Personaje (FASE B)
                     if (showAvatarSheet) AvatarSheet()
+
+                    if (showAnimationEditorSheet && activeProject != null) {
+                        ProjectAnimationEditorSheet(
+                            project = activeProject!!,
+                            onChange = { changed ->
+                                activeProject = projectRepository.save(changed)
+                                restoreProjectCharacterAndAnimation(activeProject!!)
+                                statusMsg = "Keyframe guardado en el proyecto"
+                                drawPreview()
+                            },
+                            onDismiss = { showAnimationEditorSheet = false }
+                        )
+                    }
 
                     if (showTimelineSheet && activeProject != null) {
                         ProjectTimelineSheet(
