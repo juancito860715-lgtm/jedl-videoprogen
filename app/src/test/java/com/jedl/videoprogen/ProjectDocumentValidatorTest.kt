@@ -69,7 +69,6 @@ class ProjectDocumentValidatorTest {
         assertEquals(3, scene.layers.size)
         assertNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(scene))))
     }
-}
     @Test
     fun validatesTimelineMediaAndSubtitleClips() {
         val scene = SceneDocument(
@@ -121,4 +120,4 @@ class ProjectDocumentValidatorTest {
         ))
         assertNotNull(ProjectDocumentValidator.validate(validProject().copy(scenes = listOf(outsideScene))))
     }
-
+}
