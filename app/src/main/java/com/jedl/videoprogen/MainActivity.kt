@@ -1695,9 +1695,8 @@ class MainActivity : ComponentActivity() {
     // El export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService(w: Int, h: Int) {
         // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
-        val hasProjectVisual = activeProject?.scenes?.firstOrNull()?.layers?.any { layer ->
-            layer.visible && ((layer.type == LayerType.IMAGE && layer.assetPath != null) || (layer.type == LayerType.TEXT && layer.text.isNotBlank()))
-        } == true
+        val hasProjectVisual = activeProject?.scenes?.firstOrNull()
+            ?.let(ProjectSceneContent::hasRenderableVisual) == true
         if (photo == null && !avatarMode && !hasProjectVisual) { statusMsg = "Importa una imagen, añade texto o activa un Personaje"; return }
         statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
@@ -1706,7 +1705,8 @@ class MainActivity : ComponentActivity() {
             textX, textY, textSizePx, actorX, actorY,
             avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction,
             activeProject?.scenes?.firstOrNull(),
-            activeProject?.id
+            activeProject?.id,
+            activeProject?.frameRate ?: 30
         )
     }
 
