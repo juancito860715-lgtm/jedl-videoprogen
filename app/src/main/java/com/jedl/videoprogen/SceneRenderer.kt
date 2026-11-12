@@ -104,6 +104,24 @@ object SceneRenderer {
             SceneLayerRenderer.drawLayers(canvas, w, h, projectScene.layers) { path ->
                 assetResolver?.invoke(path)
             }
+            // Subtítulos y rótulos de timeline se muestran en el intervalo
+            // real del clip; preview y export comparten este mismo reloj.
+            val sceneTime = (progress.coerceIn(0f, 1f) * projectScene.durationMillis).toLong()
+            val timedText = projectScene.timelineTracks
+                .filter { !it.muted && it.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) }
+                .flatMap { it.clips }
+                .filter { sceneTime >= it.startMillis && sceneTime < it.startMillis + it.durationMillis && it.text.isNotBlank() }
+            if (timedText.isNotEmpty()) {
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textSize = (h * 0.035f).coerceIn(24f, 64f)
+                    textAlign = Paint.Align.CENTER
+                    setShadowLayer(8f, 2f, 3f, Color.BLACK)
+                }
+                timedText.forEachIndexed { index, clip ->
+                    canvas.drawText(clip.text.take(160), w * 0.5f, h * (0.88f - index * 0.055f), paint)
+                }
+            }
         }
     }
 
