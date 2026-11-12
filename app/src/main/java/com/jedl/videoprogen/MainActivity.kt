@@ -210,10 +210,16 @@ class MainActivity : ComponentActivity() {
                             TextButton(onClick = { showProjectSheet = true }) {
                                 Text("Proyectos", color = Gold, fontSize = 12.sp)
                             }
-                            TextButton(onClick = { showTimelineSheet = true }) {
+                            TextButton(onClick = {
+                                if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
+                                else showTimelineSheet = true
+                            }) {
                                 Text("Timeline", color = Gold, fontSize = 12.sp)
                             }
-                            TextButton(onClick = { showAnimationEditorSheet = true }) {
+                            TextButton(onClick = {
+                                if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
+                                else showAnimationEditorSheet = true
+                            }) {
                                 Text("Poses", color = Gold, fontSize = 12.sp)
                             }
                             if (showExportBtn) {
@@ -1725,7 +1731,7 @@ class MainActivity : ComponentActivity() {
         Thread {
             try {
                 val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("No se pudo abrir el medio")
-                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "media.bin") }
+                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "media.bin", maxBytes = 128L * 1024L * 1024L) }
                 val retriever = MediaMetadataRetriever()
                 val sourceDuration = try {
                     retriever.setDataSource(this, uri)
@@ -1832,6 +1838,9 @@ class MainActivity : ComponentActivity() {
 
     private fun restoreProjectCharacterAndAnimation(project: ProjectDocument) {
         val scene = project.scenes.firstOrNull() ?: return
+        templatePrev = ActiveTemplate.of("idle")
+        template = ActiveTemplate.of("idle")
+        customPose = null
         val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
         if (character?.characterAppearance == null) {
             avatarMode = false
