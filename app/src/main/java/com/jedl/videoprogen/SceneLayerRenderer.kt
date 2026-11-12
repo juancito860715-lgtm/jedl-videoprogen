@@ -21,8 +21,8 @@ object SceneLayerRenderer {
                    layers: List<LayerDocument>, assetResolver: (String) -> Bitmap?) {
         if (canvasWidth <= 0 || canvasHeight <= 0 || layers.isEmpty()) return
         val baseSize = min(canvasWidth, canvasHeight) * 0.25f
-        val imagePaint = bitmapPaint.get()
-        val captionPaint = textPaint.get()
+        val imagePaint = requireNotNull(bitmapPaint.get())
+        val captionPaint = requireNotNull(textPaint.get())
         layers.asSequence().filter { it.visible }.sortedBy { it.zIndex }.forEach { layer ->
             val save = canvas.save()
             canvas.translate(canvasWidth * layer.transform.x, canvasHeight * layer.transform.y)
