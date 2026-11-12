@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 fun ProjectAnimationEditorSheet(
     project: ProjectDocument,
     onChange: (ProjectDocument) -> Unit,
+    onSelectClip: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val scene = project.scenes.first()
@@ -77,6 +78,7 @@ fun ProjectAnimationEditorSheet(
                 )
                 commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
                 selectedClipId = clip.id
+                onSelectClip(clip.id)
                 selectedTime = 0L
                 timeText = "0"
             }, modifier = Modifier.fillMaxWidth()) { Text("Crear animación para el personaje") }
@@ -91,6 +93,7 @@ fun ProjectAnimationEditorSheet(
                         RoundedCornerShape(9.dp)
                     ).clickable {
                         selectedClipId = clip.id
+                        onSelectClip(clip.id)
                         selectedTime = clip.keyframes.firstOrNull()?.timeMillis ?: 0L
                         timeText = selectedTime.toString()
                     }.padding(10.dp)
