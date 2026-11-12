@@ -22,7 +22,17 @@ class ProjectRepositoryTest {
                 SceneDocument(
                     name = "Escena principal",
                     layers = listOf(
-                        LayerDocument(id = "00000000-0000-0000-0000-000000000001", name = "Personaje", type = LayerType.CHARACTER, zIndex = 1),
+                        LayerDocument(
+                            id = "00000000-0000-0000-0000-000000000001",
+                            name = "Personaje",
+                            type = LayerType.CHARACTER,
+                            characterAppearance = CharacterAppearanceDocument(
+                                name = "Ritmo", skin = 0xFFC68B59.toInt(), hair = 0xFF212121.toInt(),
+                                hairStyle = 2, shirt = 0xFFF5B841.toInt(), pants = 0xFF2A2D35.toInt(),
+                                shoes = 0xFFE4572E.toInt(), beard = false, actorX = 0.42f, actorY = 0.6f
+                            ),
+                            zIndex = 1
+                        ),
                         LayerDocument(name = "Título", type = LayerType.TEXT, text = "Hola JEDL", zIndex = 2)
                     ),
                     timelineTracks = listOf(
@@ -69,6 +79,10 @@ class ProjectRepositoryTest {
         assertEquals(saved.id, loaded.id)
         assertEquals("Corto de prueba", loaded.name)
         assertEquals("Hola JEDL", loaded.scenes.first().layers.first { it.type == LayerType.TEXT }.text)
+        val restoredAppearance = loaded.scenes.first().layers.first { it.type == LayerType.CHARACTER }.characterAppearance!!
+        assertEquals("Ritmo", restoredAppearance.name)
+        assertEquals(2, restoredAppearance.hairStyle)
+        assertEquals(0.42f, restoredAppearance.actorX)
         val restoredClip = loaded.scenes.first().animationClips.single()
         assertEquals("Saludo", restoredClip.name)
         assertEquals("00000000-0000-0000-0000-000000000001", restoredClip.targetLayerId)
