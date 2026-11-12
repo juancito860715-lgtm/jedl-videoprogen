@@ -18,8 +18,8 @@ import java.util.UUID
  * La escritura usa archivo temporal + fsync + rename para no dejar un
  * documento truncado si Android cierra el proceso durante el guardado.
  */
-class ProjectRepository(context: Context) {
-    private val root = File(context.applicationContext.filesDir, "JEDLStudio/projects")
+class ProjectRepository private constructor(private val root: File) {
+    constructor(context: Context) : this(File(context.applicationContext.filesDir, "JEDLStudio/projects"))
 
     data class ProjectSummary(
         val id: String,
@@ -226,6 +226,9 @@ class ProjectRepository(context: Context) {
     companion object {
         private const val PROJECT_FILE = "project.json"
         private val SAFE_ID = Regex("^[a-fA-F0-9-]{16,64}$")
+
+        internal fun forTests(directory: File): ProjectRepository =
+            ProjectRepository(File(directory, "JEDLStudio/projects"))
 
         fun newProject(name: String, width: Int = 720, height: Int = 1280, frameRate: Int = 30): ProjectDocument {
             val now = System.currentTimeMillis()
