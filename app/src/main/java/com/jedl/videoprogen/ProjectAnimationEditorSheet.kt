@@ -147,30 +147,25 @@ fun ProjectAnimationEditorSheet(
                             angle == null || !angle.isFinite() || angle !in -360f..360f) {
                             error = "Revisa el tiempo y el ángulo introducidos"
                         } else {
-                            val base = selectedClip.keyframes.firstOrNull { it.timeMillis == selectedTime }?.boneAngles
-                                ?: selectedClip.keyframes.lastOrNull { it.timeMillis <= time }?.boneAngles.orEmpty()
-                            if (selectedClip.keyframes.any { it.timeMillis == time && it.timeMillis != selectedTime }) {
-                                error = "Ya existe una pose en ese instante"
-                            } else {
-                                val frame = AnimationKeyframeDocument(
-                                    time, base + (boneName to angle),
-                                    selectedFrame?.rootBob ?: 0f, selectedFrame?.rootSway ?: 0f
+                            try {
+                                val changed = ProjectAnimationEditorOperations.upsertPose(
+                                    selectedClip, selectedTime, time, boneName, angle
                                 )
-                                val frames = (selectedClip.keyframes.filterNot { it.timeMillis == selectedTime } + frame).sortedBy { it.timeMillis }
-                                val changed = selectedClip.copy(keyframes = frames)
                                 commitScene(scene.copy(animationClips = scene.animationClips.map { if (it.id == changed.id) changed else it }))
                                 selectedTime = time
+                            } catch (failure: IllegalArgumentException) {
+                                error = failure.message ?: "No se pudo actualizar la pose"
                             }
                         }
                     }, modifier = Modifier.weight(1f)) { Text("Crear / actualizar pose") }
                     Button(onClick = {
-                        if (selectedClip.keyframes.size <= 1) error = "El clip debe conservar al menos una pose"
-                        else {
-                            val frames = selectedClip.keyframes.filterNot { it.timeMillis == selectedTime }
-                            val changed = selectedClip.copy(keyframes = frames)
+                        try {
+                            val changed = ProjectAnimationEditorOperations.deletePose(selectedClip, selectedTime)
                             commitScene(scene.copy(animationClips = scene.animationClips.map { if (it.id == changed.id) changed else it }))
-                            selectedTime = frames.first().timeMillis
+                            selectedTime = changed.keyframes.first().timeMillis
                             timeText = selectedTime.toString()
+                        } catch (failure: IllegalArgumentException) {
+                            error = failure.message ?: "No se pudo eliminar la pose"
                         }
                     }, modifier = Modifier.weight(1f)) { Text("Eliminar pose") }
                 }
