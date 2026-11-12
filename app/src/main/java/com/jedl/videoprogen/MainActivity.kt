@@ -1689,7 +1689,8 @@ class MainActivity : ComponentActivity() {
                     actorX = actorX, actorY = actorY,
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
-                    direction = direction
+                    direction = direction,
+                    projectScene = activeProject?.scenes?.firstOrNull()
                 )
             }
             if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)
