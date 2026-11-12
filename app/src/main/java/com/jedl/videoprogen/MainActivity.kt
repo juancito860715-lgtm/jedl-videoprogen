@@ -1512,8 +1512,8 @@ class MainActivity : ComponentActivity() {
     // se crea una plantilla propia "Mi animación N".
     // ============================================================
     private fun enterPoseMode() {
-        if (photo == null) {
-            statusMsg = "Elegí una foto primero"
+        if (photo == null && !avatarMode) {
+            statusMsg = "Carga una foto o activa el modo Personaje"
             return
         }
         // Congelar la pose actual del template como punto de partida
