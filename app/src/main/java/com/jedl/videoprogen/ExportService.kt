@@ -58,7 +58,10 @@ class ExportService : Service() {
     private fun doExport() {
         val photo = pendingPhoto
         val text = pendingText
-        if (photo == null && !(pendingAvatarMode && pendingAvatarSpec != null)) { stopSelf(); return }
+        val hasProjectVisual = pendingProjectScene?.layers?.any { layer ->
+            layer.visible && ((layer.type == LayerType.IMAGE && layer.assetPath != null) || (layer.type == LayerType.TEXT && layer.text.isNotBlank()))
+        } == true
+        if (photo == null && !(pendingAvatarMode && pendingAvatarSpec != null) && !hasProjectVisual) { stopSelf(); return }
 
         val nm = getSystemService(NotificationManager::class.java)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
