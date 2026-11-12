@@ -3,6 +3,7 @@ package com.jedl.videoprogen
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PointF
+import android.util.LruCache
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
@@ -137,6 +138,8 @@ class MainActivity : ComponentActivity() {
     @Volatile private var faceFitW = 0f
     @Volatile private var faceFitH = 0f
     private lateinit var projectRepository: ProjectRepository
+    private lateinit var projectAssetStore: ProjectAssetStore
+    private val projectBitmapCache = LruCache<String, Bitmap>(24 * 1024 * 1024)
     private var activeProject by mutableStateOf<ProjectDocument?>(null)
     private var showProjectSheet by mutableStateOf(false)
 
@@ -153,6 +156,9 @@ class MainActivity : ComponentActivity() {
     private val videoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) cloneFromVideo(uri)
     }
+    private val projectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importProjectImage(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -160,6 +166,7 @@ class MainActivity : ComponentActivity() {
         // cuando el usuario toca el boton "Voz" por primera vez
         ttsManager = TtsManager(this)
         projectRepository = ProjectRepository(this)
+        projectAssetStore = ProjectAssetStore(this)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
@@ -489,6 +496,7 @@ class MainActivity : ComponentActivity() {
                         ProjectManagerSheet(
                             repository = projectRepository,
                             currentProject = activeProject,
+                            onImportResource = { projectImageLauncher.launch("image/*") },
                             onCreate = { name ->
                                 activeProject = projectRepository.save(ProjectRepository.newProject(name))
                                 statusMsg = "Proyecto creado y guardado"
@@ -1647,6 +1655,49 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun resolveProjectBitmap(relativePath: String): Bitmap? {
+        val projectId = activeProject?.id ?: return null
+        val cacheKey = projectId + "/" + relativePath
+        projectBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
+        return try {
+            projectAssetStore.openAsset(projectId, relativePath).use { input ->
+                BitmapFactory.decodeStream(input)?.also { decoded -> projectBitmapCache.put(cacheKey, decoded) }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun importProjectImage(uri: Uri) {
+        val project = activeProject
+        if (project == null) {
+            Toast.makeText(this, "Crea o abre un proyecto antes de importar recursos", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("No se pudo abrir la imagen")
+                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "image.bin") }
+                val scene = project.scenes.first()
+                val layer = LayerDocument(
+                    name = "Imagen " + (scene.layers.count { it.type == LayerType.IMAGE } + 1),
+                    type = LayerType.IMAGE,
+                    assetPath = imported.relativePath,
+                    zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                )
+                val updated = project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(scene.copy(layers = scene.layers + layer)) + project.scenes.drop(1)
+                )
+                val saved = projectRepository.save(updated)
+                runOnUiThread {
+                    activeProject = saved
+                    statusMsg = "Imagen importada y guardada en el proyecto"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "No se pudo importar la imagen", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
@@ -1676,7 +1727,8 @@ class MainActivity : ComponentActivity() {
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
                     direction = direction,
-                    projectScene = activeProject?.scenes?.firstOrNull()
+                    projectScene = activeProject?.scenes?.firstOrNull(),
+                    assetResolver = ::resolveProjectBitmap
                 )
                 canvas.restore()
             } else {
