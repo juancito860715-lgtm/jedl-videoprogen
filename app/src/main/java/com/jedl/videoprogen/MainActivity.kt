@@ -144,6 +144,8 @@ class MainActivity : ComponentActivity() {
     }
     private var activeProject by mutableStateOf<ProjectDocument?>(null)
     private var showProjectSheet by mutableStateOf(false)
+    private var showTimelineSheet by mutableStateOf(false)
+    private var pendingTimelineType: TimelineTrackType = TimelineTrackType.AUDIO
 
     // Dirección del caminar/correr (pedido del dueño: ver todas)
     private var direction by mutableStateOf("der")
@@ -160,6 +162,9 @@ class MainActivity : ComponentActivity() {
     }
     private val projectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) importProjectImage(uri)
+    }
+    private val timelineMediaLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importProjectMedia(uri, pendingTimelineType)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -203,6 +208,9 @@ class MainActivity : ComponentActivity() {
                             }
                             TextButton(onClick = { showProjectSheet = true }) {
                                 Text("Proyectos", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { showTimelineSheet = true }) {
+                                Text("Timeline", color = Gold, fontSize = 12.sp)
                             }
                             if (showExportBtn) {
                                 Button(
@@ -493,6 +501,22 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Personaje (FASE B)
                     if (showAvatarSheet) AvatarSheet()
+
+                    if (showTimelineSheet && activeProject != null) {
+                        ProjectTimelineSheet(
+                            project = activeProject!!,
+                            onChange = { changed ->
+                                activeProject = projectRepository.save(changed)
+                                statusMsg = "Línea de tiempo guardada"
+                                drawPreview()
+                            },
+                            onImportMedia = { type ->
+                                pendingTimelineType = type
+                                timelineMediaLauncher.launch(if (type == TimelineTrackType.VIDEO) "video/*" else "audio/*")
+                            },
+                            onDismiss = { showTimelineSheet = false }
+                        )
+                    }
 
                     if (showProjectSheet) {
                         ProjectManagerSheet(
@@ -1671,6 +1695,52 @@ class MainActivity : ComponentActivity() {
                 BitmapFactory.decodeStream(input, null, options)?.also { decoded -> projectBitmapCache.put(cacheKey, decoded) }
             }
         } catch (_: Exception) { null }
+    }
+
+    private fun importProjectMedia(uri: Uri, trackType: TimelineTrackType) {
+        val project = activeProject
+        if (project == null) {
+            Toast.makeText(this, "Crea o abre un proyecto antes de importar medios", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("No se pudo abrir el medio")
+                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "media.bin") }
+                val retriever = MediaMetadataRetriever()
+                val sourceDuration = try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5_000L
+                } finally { retriever.release() }
+                val scene = project.scenes.first()
+                val duration = sourceDuration.coerceIn(1L, scene.durationMillis)
+                val existing = scene.timelineTracks.firstOrNull { it.type == trackType }
+                val track = existing ?: TimelineTrackDocument(
+                    name = if (trackType == TimelineTrackType.VIDEO) "Vídeo" else "Audio",
+                    type = trackType
+                )
+                val clip = TimelineClipDocument(
+                    name = imported.originalName.take(100).ifBlank { if (trackType == TimelineTrackType.VIDEO) "Vídeo importado" else "Audio importado" },
+                    assetPath = imported.relativePath,
+                    startMillis = 0L,
+                    durationMillis = duration,
+                    sourceStartMillis = 0L,
+                    sourceEndMillis = duration
+                )
+                val changedTrack = track.copy(clips = track.clips + clip)
+                val tracks = if (existing == null) scene.timelineTracks + changedTrack
+                    else scene.timelineTracks.map { if (it.id == existing.id) changedTrack else it }
+                val updated = project.copy(scenes = listOf(scene.copy(timelineTracks = tracks)) + project.scenes.drop(1))
+                val saved = projectRepository.save(updated)
+                runOnUiThread {
+                    activeProject = saved
+                    statusMsg = "Medio importado y guardado en la pista " + trackType.name + "; reproducción/exportación multipista pendiente"
+                    showTimelineSheet = true
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "No se pudo importar el medio", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
     }
 
     private fun importProjectImage(uri: Uri) {
