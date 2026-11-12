@@ -120,7 +120,7 @@ fun ProjectAnimationEditorSheet(
                 }
                 OutlinedTextField(
                     value = timeText,
-                    onValueChange = { timeText = it.filter(Char::isDigit) },
+                    onValueChange = { timeText = it.filter { ch -> ch.isDigit() } },
                     label = { Text("Tiempo de la pose (ms)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
