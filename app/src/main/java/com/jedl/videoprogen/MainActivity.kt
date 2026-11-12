@@ -222,9 +222,9 @@ class MainActivity : ComponentActivity() {
                             }) {
                                 Text("Poses", color = Gold, fontSize = 12.sp)
                             }
-                            if (showExportBtn) {
+                            if (showExportBtn || activeProject != null) {
                                 Button(
-                                    onClick = { if (photo != null) showFormatSheet = true },
+                                    onClick = { showFormatSheet = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = Gold),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -1695,7 +1695,10 @@ class MainActivity : ComponentActivity() {
     // El export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService(w: Int, h: Int) {
         // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
-        if (photo == null && !avatarMode) { statusMsg = "Elegí una foto o activá un Personaje"; return }
+        val hasProjectVisual = activeProject?.scenes?.firstOrNull()?.layers?.any { layer ->
+            layer.visible && ((layer.type == LayerType.IMAGE && layer.assetPath != null) || (layer.type == LayerType.TEXT && layer.text.isNotBlank()))
+        } == true
+        if (photo == null && !avatarMode && !hasProjectVisual) { statusMsg = "Importa una imagen, añade texto o activa un Personaje"; return }
         statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
         ExportService.start(
@@ -1899,6 +1902,7 @@ class MainActivity : ComponentActivity() {
                 val saved = projectRepository.save(updated)
                 runOnUiThread {
                     activeProject = saved
+                    showExportBtn = true
                     statusMsg = "Imagen importada y guardada en el proyecto"
                     drawPreview()
                 }
