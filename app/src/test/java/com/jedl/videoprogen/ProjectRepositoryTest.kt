@@ -25,6 +25,30 @@ class ProjectRepositoryTest {
                         LayerDocument(id = "00000000-0000-0000-0000-000000000001", name = "Personaje", type = LayerType.CHARACTER, zIndex = 1),
                         LayerDocument(name = "Título", type = LayerType.TEXT, text = "Hola JEDL", zIndex = 2)
                     ),
+                    timelineTracks = listOf(
+                        TimelineTrackDocument(
+                            name = "Música",
+                            type = TimelineTrackType.MUSIC,
+                            clips = listOf(TimelineClipDocument(
+                                name = "Base musical",
+                                assetPath = "assets/audio/music.wav",
+                                startMillis = 500L,
+                                durationMillis = 2_000L,
+                                sourceStartMillis = 100L,
+                                volume = 0.75f
+                            ))
+                        ),
+                        TimelineTrackDocument(
+                            name = "Subtítulos",
+                            type = TimelineTrackType.SUBTITLE,
+                            clips = listOf(TimelineClipDocument(
+                                name = "Entrada",
+                                startMillis = 250L,
+                                durationMillis = 1_000L,
+                                text = "Hola mundo"
+                            ))
+                        )
+                    ),
                     animationClips = listOf(
                         AnimationClipDocument(
                             name = "Saludo",
@@ -49,6 +73,12 @@ class ProjectRepositoryTest {
         assertEquals("Saludo", restoredClip.name)
         assertEquals("00000000-0000-0000-0000-000000000001", restoredClip.targetLayerId)
         assertEquals(-90f, restoredClip.keyframes.last().boneAngles["armUR"]!!)
+        val restoredMusic = loaded.scenes.first().timelineTracks.first { it.type == TimelineTrackType.MUSIC }.clips.single()
+        assertEquals("assets/audio/music.wav", restoredMusic.assetPath)
+        assertEquals(500L, restoredMusic.startMillis)
+        assertEquals(0.75f, restoredMusic.volume)
+        val restoredSubtitle = loaded.scenes.first().timelineTracks.first { it.type == TimelineTrackType.SUBTITLE }.clips.single()
+        assertEquals("Hola mundo", restoredSubtitle.text)
         assertEquals(1, repository.list().size)
         assertTrue(repository.delete(saved.id))
         assertFalse(repository.delete(saved.id))
