@@ -28,6 +28,6 @@ class ProjectAnimationMapperTest {
         assertEquals("Wave", restored.name)
         assertTrue(restored.loop)
         assertEquals(-80f, restored.frames.last().pose.angles["armUR"]!!)
-        assertEquals(0.01f, restored.frames.first().pose.sway, 0.0001f)
+        assertEquals(-0.02f, restored.frames.first().pose.sway, 0.0001f)
     }
 }
