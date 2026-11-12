@@ -56,6 +56,9 @@ object SceneRenderer {
             val effectiveActorY = appearance?.actorY ?: layerY
             val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f
             val effectiveAvatarMode = if (appearance != null) appearance.enabled else avatarMode
+            val effectiveAvatarSpec = appearance?.let {
+                AvatarSpec(it.name, it.skin, it.hair, it.hairStyle, it.shirt, it.pants, it.shoes, it.beard)
+            } ?: avatarSpec
             val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
 
             canvas.save()
@@ -67,12 +70,12 @@ object SceneRenderer {
             canvas.translate(pose.sway * unit, pose.bob * unit)
             canvas.scale(unit, unit)
 
-            if (effectiveAvatarMode && avatarSpec != null) {
+            if (effectiveAvatarMode && effectiveAvatarSpec != null) {
                 val effectiveDirection = appearance?.direction ?: direction
                 val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
                 val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
-                AvatarRenderer.draw(canvas, solvedAvatar, avatarSpec, avatarFace, effectiveDirection)
+                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, avatarFace, effectiveDirection)
             } else {
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
             }
