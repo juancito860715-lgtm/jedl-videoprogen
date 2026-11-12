@@ -33,7 +33,8 @@ data class SceneDocument(
     val durationMillis: Long = 5_000L,
     val backgroundColor: Int = 0xFF101116.toInt(),
     val layers: List<LayerDocument> = emptyList(),
-    val animationClips: List<AnimationClipDocument> = emptyList()
+    val animationClips: List<AnimationClipDocument> = emptyList(),
+    val timelineTracks: List<TimelineTrackDocument> = emptyList()
 )
 
 /** Estado de animación serializable; no depende de clases Android del motor. */
@@ -124,6 +125,8 @@ object ProjectDocumentValidator {
                 val path = layer.assetPath
                 if (path != null && !isSafeRelativeAssetPath(path)) return "Ruta de recurso no segura"
             }
+            val timelineError = TimelineDocumentValidator.validate(scene.timelineTracks, scene.durationMillis)
+            if (timelineError != null) return timelineError
             val clipIds = HashSet<String>()
             for (clip in scene.animationClips) {
                 if (!safeId.matches(clip.id) || !clipIds.add(clip.id)) return "ID de animación no válido o duplicado"
