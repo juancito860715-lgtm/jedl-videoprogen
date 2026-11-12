@@ -1833,6 +1833,13 @@ class MainActivity : ComponentActivity() {
     private fun restoreProjectCharacterAndAnimation(project: ProjectDocument) {
         val scene = project.scenes.firstOrNull() ?: return
         val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+        if (character?.characterAppearance == null) {
+            avatarMode = false
+            avatarSpec = Avatars.presets().first()
+            actorX = 0.5f
+            actorY = 0.55f
+            direction = "der"
+        }
         val appearance = character?.characterAppearance
         if (appearance != null) {
             avatarSpec = AvatarSpec(
@@ -1848,6 +1855,7 @@ class MainActivity : ComponentActivity() {
         if (clip != null) {
             try {
                 val restored = ProjectAnimationMapper.toMotionTemplate(clip)
+                userTemplates.removeAll { it.name == restored.name }
                 userTemplates.add(restored)
                 templatePrev = template
                 template = ActiveTemplate(null, restored)
