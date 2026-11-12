@@ -15,5 +15,11 @@ object ProjectSceneContent {
                     LayerType.TEXT, LayerType.SUBTITLE -> layer.text.isNotBlank()
                     LayerType.VIDEO, LayerType.AUDIO -> false
                 }
+        } || scene.timelineTracks.any { track ->
+            !track.muted && track.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) &&
+                track.clips.any { clip ->
+                    clip.text.isNotBlank() && clip.startMillis < scene.durationMillis &&
+                        clip.durationMillis > 0L
+                }
         }
 }
