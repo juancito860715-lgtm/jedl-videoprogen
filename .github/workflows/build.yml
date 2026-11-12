@@ -2,6 +2,9 @@ name: Build APK
 on: [push, workflow_dispatch]
 permissions:
   contents: read
+concurrency:
+  group: jedl-build-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -62,23 +65,9 @@ jobs:
           fi
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
-      - name: Run unit tests
+      - name: Run tests and build debug APK
         run: |
-          ./gradlew testDebugUnitTest --no-daemon --stacktrace
-      - name: Build debug APK
-        run: |
-          set +e
-          ./gradlew assembleDebug --no-daemon --stacktrace > build_log.txt 2>&1
-          status=$?
-          set -e
-          grep -E "^e: |error: " build_log.txt | head -12 > build_errors.txt || true
-          if [ -s build_errors.txt ]; then
-            while IFS= read -r line; do
-              echo "::error::$(echo "$line" | sed 's|file:///home/runner/work/||' | cut -c1-220)"
-            done < build_errors.txt
-          fi
-          tail -20 build_log.txt
-          exit $status
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
