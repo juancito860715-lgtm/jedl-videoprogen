@@ -40,59 +40,57 @@ object SceneRenderer {
         val characterLayer = projectScene?.layers
             ?.filter { it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime) }
             ?.maxByOrNull { it.zIndex }
-        val shouldDrawActor = !projectMode || characterLayer != null
-        if (shouldDrawActor) {
-            val pose = overridePose ?: run {
-                val s = blend * blend * (3f - 2f * blend)
-                PuppetEngine.lerpPose(
-                    PuppetEngine.poseForActive(prevTemplate, progress),
-                    PuppetEngine.poseForActive(template, progress),
-                    s
-                )
-            }
-            val appearance = characterLayer?.characterAppearance
-            val effectiveActorX = appearance?.actorX ?: characterLayer?.transform?.x ?: actorX
-            val effectiveActorY = appearance?.actorY ?: characterLayer?.transform?.y ?: actorY
+        val pose = overridePose ?: run {
+            val s = blend * blend * (3f - 2f * blend)
+            PuppetEngine.lerpPose(
+                PuppetEngine.poseForActive(prevTemplate, progress),
+                PuppetEngine.poseForActive(template, progress),
+                s
+            )
+        }
+        val drawActor: (LayerDocument?) -> Unit = { layer ->
+            val appearance = layer?.characterAppearance
+            val layerX = layer?.transform?.x ?: actorX
+            val layerY = layer?.transform?.y ?: actorY
+            val effectiveActorX = appearance?.actorX ?: layerX
+            val effectiveActorY = appearance?.actorY ?: layerY
             val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f
-            val ox = w * effectiveActorX + pose.sway * unit
-            val oy = h * effectiveActorY + pose.bob * unit
             val effectiveAvatarMode = if (appearance != null) appearance.enabled else avatarMode
             val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+
+            canvas.save()
+            if (layer == null) {
+                canvas.translate(w * effectiveActorX, h * effectiveActorY)
+            } else {
+                canvas.translate(w * (effectiveActorX - layerX), h * (effectiveActorY - layerY))
+            }
+            canvas.translate(pose.sway * unit, pose.bob * unit)
+            canvas.scale(unit, unit)
 
             if (effectiveAvatarMode && avatarSpec != null) {
                 val effectiveDirection = appearance?.direction ?: direction
                 val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
                 val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
-                canvas.save()
-                canvas.translate(ox, oy)
-                canvas.scale(unit, unit)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
                 AvatarRenderer.draw(canvas, solvedAvatar, avatarSpec, avatarFace, effectiveDirection)
-                canvas.restore()
             } else {
-                canvas.save()
-                canvas.translate(ox, oy)
-                canvas.scale(unit, unit)
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
-                canvas.restore()
             }
 
-            if (drawSkeleton) {
+            if (drawSkeleton && layer == null) {
                 val linePaint = Paint().apply {
                     color = Color.parseColor("#F5B841"); strokeWidth = 3f; style = Paint.Style.STROKE
                 }
                 val jointPaint = Paint().apply { color = Color.parseColor("#E87722") }
                 for (bone in PuppetRig.HUMANOID.bones) {
                     val bonePose = solved[bone.name] ?: continue
-                    val jx = ox + bonePose.joint.x * unit
-                    val jy = oy + bonePose.joint.y * unit
-                    val tx = ox + bonePose.tip.x * unit
-                    val ty = oy + bonePose.tip.y * unit
-                    canvas.drawLine(jx, jy, tx, ty, linePaint)
-                    canvas.drawCircle(jx, jy, 4f, jointPaint)
+                    canvas.drawLine(bonePose.joint.x, bonePose.joint.y, bonePose.tip.x, bonePose.tip.y, linePaint)
+                    canvas.drawCircle(bonePose.joint.x, bonePose.joint.y, 0.004f, jointPaint)
                 }
             }
+            canvas.restore()
         }
+        if (!projectMode) drawActor(null)
 
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
@@ -101,7 +99,8 @@ object SceneRenderer {
             SceneLayerRenderer.drawLayers(
                 canvas, w, h, scene.layers,
                 assetResolver ?: { null },
-                sceneTime
+                sceneTime,
+                characterRenderer = drawActor
             )
             val timedText = scene.timelineTracks
                 .filter { !it.muted && it.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) }
