@@ -103,29 +103,40 @@ fun ProjectAnimationEditorSheet(
                 }
             }
 
+            val targetCharacterId = selectedTargetLayerId.ifBlank { characterLayers.firstOrNull()?.id.orEmpty() }
+            val existingTargetClip = scene.animationClips.firstOrNull { it.targetLayerId == targetCharacterId }
             Button(onClick = {
                 val character = characterLayers.firstOrNull { it.id == selectedTargetLayerId }
                     ?: characterLayers.firstOrNull()
                     ?: LayerDocument(name = "Personaje", type = LayerType.CHARACTER)
-                val layers = if (scene.layers.any { it.id == character.id }) scene.layers
-                    else scene.layers + character
-                val clip = AnimationClipDocument(
-                    name = "Animación " + (scene.animationClips.size + 1),
-                    targetLayerId = character.id,
-                    durationMillis = scene.durationMillis,
-                    keyframes = listOf(
-                        AnimationKeyframeDocument(0L, mapOf("torso" to 0f)),
-                        AnimationKeyframeDocument(scene.durationMillis, mapOf("torso" to 0f))
+                val existingClip = scene.animationClips.firstOrNull { it.targetLayerId == character.id }
+                if (existingClip != null) {
+                    selectedTargetLayerId = character.id
+                    selectedClipId = existingClip.id
+                    onSelectClip(existingClip.id)
+                    selectedTime = existingClip.keyframes.firstOrNull()?.timeMillis ?: 0L
+                    timeText = selectedTime.toString()
+                } else {
+                    val layers = if (scene.layers.any { it.id == character.id }) scene.layers
+                        else scene.layers + character
+                    val clip = AnimationClipDocument(
+                        name = "Animación " + (scene.animationClips.size + 1),
+                        targetLayerId = character.id,
+                        durationMillis = scene.durationMillis,
+                        keyframes = listOf(
+                            AnimationKeyframeDocument(0L, mapOf("torso" to 0f)),
+                            AnimationKeyframeDocument(scene.durationMillis, mapOf("torso" to 0f))
+                        )
                     )
-                )
-                commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
-                selectedTargetLayerId = character.id
-                selectedClipId = clip.id
-                onSelectClip(clip.id)
-                selectedTime = 0L
-                timeText = "0"
+                    commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
+                    selectedTargetLayerId = character.id
+                    selectedClipId = clip.id
+                    onSelectClip(clip.id)
+                    selectedTime = 0L
+                    timeText = "0"
+                }
             }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (characterLayers.size > 1) "Crear animación para el personaje seleccionado" else "Crear animación para el personaje")
+                Text(if (existingTargetClip != null) "Seleccionar animación guardada" else "Crear animación para el personaje seleccionado")
             }
 
             if (scene.animationClips.isEmpty()) {
