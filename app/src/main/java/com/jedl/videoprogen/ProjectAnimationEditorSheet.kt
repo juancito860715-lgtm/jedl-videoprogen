@@ -141,9 +141,16 @@ fun ProjectAnimationEditorSheet(
 
             if (scene.animationClips.isEmpty()) {
                 Text("Todavía no hay clips de animación guardados.", color = Color(0xFFE7E8EE))
+            } else {
+                Text(
+                    "Por ahora se reproduce un clip por personaje. La secuencia de varios clips se incorporará al timeline.",
+                    color = Color(0xFFE7E8EE),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             scene.animationClips.forEach { clip ->
                 val targetName = scene.layers.firstOrNull { it.id == clip.targetLayerId }?.name ?: "Personaje"
+                val activeForCharacter = scene.animationClips.firstOrNull { it.targetLayerId == clip.targetLayerId }?.id == clip.id
                 Column(
                     modifier = Modifier.fillMaxWidth().background(
                         if (clip.id == selectedClipId) Color(0xFF34302A) else Color(0xFF1B1D24),
@@ -157,7 +164,11 @@ fun ProjectAnimationEditorSheet(
                     }.padding(10.dp)
                 ) {
                     Text(clip.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text("${targetName} · ${clip.keyframes.size} poses · ${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
+                    Text(
+                        if (activeForCharacter) "${targetName} · clip activo · ${clip.keyframes.size} poses"
+                        else "${targetName} · clip adicional guardado",
+                        color = Color(0xFFE7E8EE)
+                    )
                 }
             }
 
