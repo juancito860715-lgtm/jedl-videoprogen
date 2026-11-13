@@ -108,7 +108,30 @@ fun ProjectAnimationEditorSheet(
             Button(onClick = {
                 val character = characterLayers.firstOrNull { it.id == selectedTargetLayerId }
                     ?: characterLayers.firstOrNull()
-                    ?: LayerDocument(name = "Personaje", type = LayerType.CHARACTER)
+                    ?: run {
+                        val preset = Avatars.presets().first()
+                        val x = 0.5f
+                        val y = 0.55f
+                        LayerDocument(
+                            name = "Personaje",
+                            type = LayerType.CHARACTER,
+                            characterAppearance = CharacterAppearanceDocument(
+                                name = preset.name,
+                                skin = preset.skin,
+                                hair = preset.hair,
+                                hairStyle = preset.hairStyle,
+                                shirt = preset.shirt,
+                                pants = preset.pants,
+                                shoes = preset.shoes,
+                                beard = preset.beard,
+                                enabled = true,
+                                actorX = x,
+                                actorY = y
+                            ),
+                            transform = Transform2D(x = x, y = y),
+                            zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                        )
+                    }
                 val existingClip = scene.animationClips.firstOrNull { it.targetLayerId == character.id }
                 if (existingClip != null) {
                     selectedTargetLayerId = character.id
