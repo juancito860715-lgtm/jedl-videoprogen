@@ -78,11 +78,53 @@ class ProjectAnimationSamplerTest {
             animationClips = listOf(firstClip, secondClip)
         )
 
-        val firstPose = ProjectAnimationSampler.poseForLayer(scene, firstLayer.id, 0L)
-        val secondPose = ProjectAnimationSampler.poseForLayer(scene, secondLayer.id, 0L)
+        val firstPose = ProjectAnimationSampler.poseForLayer(scene, firstLayer, 0L)
+        val secondPose = ProjectAnimationSampler.poseForLayer(scene, secondLayer, 0L)
 
         assertEquals(-90f, firstPose!!.angles["armUR"]!!, 0.0001f)
         assertEquals(45f, secondPose!!.angles["armUR"]!!, 0.0001f)
-        assertNull(ProjectAnimationSampler.poseForLayer(scene, "00000000-0000-0000-0000-000000000003", 0L))
+        assertNull(ProjectAnimationSampler.poseForLayer(
+            scene,
+            LayerDocument(id = "00000000-0000-0000-0000-000000000003", type = LayerType.CHARACTER),
+            0L
+        ))
+    }
+
+    @Test
+    fun animationTimeStartsRelativeToCharacterLayerStart() {
+        val layer = LayerDocument(
+            id = "00000000-0000-0000-0000-000000000004",
+            type = LayerType.CHARACTER,
+            startMillis = 500L
+        )
+        val scene = SceneDocument(
+            layers = listOf(layer),
+            animationClips = listOf(clip(target = layer.id))
+        )
+
+        val atLayerStart = ProjectAnimationSampler.poseForLayer(scene, layer, 500L)
+        val halfwayThroughClip = ProjectAnimationSampler.poseForLayer(scene, layer, 1_000L)
+
+        assertEquals(0f, atLayerStart!!.angles["armUR"]!!, 0.0001f)
+        assertEquals(50f, halfwayThroughClip!!.angles["armUR"]!!, 0.0001f)
+    }
+
+    @Test
+    fun firstClipForACharacterIsTheActiveClipUntilTimelineSequencingExists() {
+        val layer = LayerDocument(
+            id = "00000000-0000-0000-0000-000000000005",
+            type = LayerType.CHARACTER
+        )
+        val first = clip(target = layer.id).copy(
+            keyframes = listOf(AnimationKeyframeDocument(0L, mapOf("armUR" to -30f)))
+        )
+        val second = clip(target = layer.id).copy(
+            keyframes = listOf(AnimationKeyframeDocument(0L, mapOf("armUR" to 80f)))
+        )
+        val scene = SceneDocument(layers = listOf(layer), animationClips = listOf(first, second))
+
+        val pose = ProjectAnimationSampler.poseForLayer(scene, layer, 0L)
+
+        assertEquals(-30f, pose!!.angles["armUR"]!!, 0.0001f)
     }
 }
