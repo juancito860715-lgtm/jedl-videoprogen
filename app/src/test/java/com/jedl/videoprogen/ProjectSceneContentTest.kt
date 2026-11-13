@@ -20,7 +20,7 @@ class ProjectSceneContentTest {
         val scene = SceneDocument(durationMillis = 1_000L, layers = listOf(
             LayerDocument(type = LayerType.TEXT, text = "Oculto", visible = false),
             LayerDocument(type = LayerType.IMAGE, assetPath = "assets/late.png", startMillis = 1_000L),
-            LayerDocument(type = LayerType.TEXT, text = "Vacío")
+            LayerDocument(type = LayerType.TEXT, text = "")
         ))
         assertFalse(ProjectSceneContent.hasRenderableVisual(scene))
     }
