@@ -3,9 +3,9 @@ package com.jedl.videoprogen
 /**
  * Muestrea un clip persistente sin depender de Android Canvas ni de la interfaz.
  *
- * El tiempo recibido es relativo al comienzo de la capa que contiene al personaje.
- * Si el clip está en loop, vuelve al inicio al alcanzar durationMillis; si no,
- * mantiene la última pose. Entre keyframes se usa el mismo smoothstep del motor.
+ * Recibe el tiempo absoluto de la escena y lo convierte a tiempo local restando
+ * layer.startMillis. Si el clip está en loop, vuelve al inicio al alcanzar
+ * durationMillis; si no, mantiene la última pose. Entre keyframes usa smoothstep.
  */
 object ProjectAnimationSampler {
 
