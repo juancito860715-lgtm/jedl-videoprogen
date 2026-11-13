@@ -62,8 +62,8 @@ object SceneRenderer {
             val clipPose = if (layer != null && projectScene != null) {
                 ProjectAnimationSampler.poseForLayer(
                     projectScene,
-                    layer.id,
-                    sceneTime - layer.startMillis
+                    layer,
+                    sceneTime
                 )
             } else {
                 null
