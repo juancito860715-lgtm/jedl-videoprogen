@@ -107,6 +107,39 @@ fun ProjectManagerSheet(
                         layerText = ""
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Añadir capa de texto") }
+
+                Button(onClick = {
+                    val scene = currentProject.scenes.first()
+                    val characterCount = scene.layers.count { it.type == LayerType.CHARACTER }
+                    val preset = Avatars.presets()[characterCount % Avatars.presets().size]
+                    val actorX = if (characterCount % 2 == 0) 0.34f else 0.66f
+                    val actorY = 0.55f
+                    val character = LayerDocument(
+                        name = "Personaje ${characterCount + 1}",
+                        type = LayerType.CHARACTER,
+                        characterAppearance = CharacterAppearanceDocument(
+                            name = preset.name,
+                            skin = preset.skin,
+                            hair = preset.hair,
+                            hairStyle = preset.hairStyle,
+                            shirt = preset.shirt,
+                            pants = preset.pants,
+                            shoes = preset.shoes,
+                            beard = preset.beard,
+                            enabled = true,
+                            actorX = actorX,
+                            actorY = actorY
+                        ),
+                        transform = Transform2D(x = actorX, y = actorY),
+                        zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                    )
+                    val changed = currentProject.copy(
+                        modifiedAtMillis = System.currentTimeMillis(),
+                        scenes = listOf(scene.copy(layers = scene.layers + character)) + currentProject.scenes.drop(1)
+                    )
+                    onChange(changed)
+                    error = ""
+                }, modifier = Modifier.fillMaxWidth()) { Text("Añadir personaje independiente") }
             }
 
             if (error.isNotBlank()) Text(error, color = Color(0xFFFF8A80))
