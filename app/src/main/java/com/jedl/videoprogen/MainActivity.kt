@@ -3,6 +3,7 @@ package com.jedl.videoprogen
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PointF
+import android.util.LruCache
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
@@ -136,6 +137,18 @@ class MainActivity : ComponentActivity() {
     @Volatile private var faceFitT = 0f
     @Volatile private var faceFitW = 0f
     @Volatile private var faceFitH = 0f
+    private lateinit var projectRepository: ProjectRepository
+    private lateinit var projectAssetStore: ProjectAssetStore
+    private val projectBitmapCache = object : LruCache<String, Bitmap>(24 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
+    }
+    private var activeProject by mutableStateOf<ProjectDocument?>(null)
+    private var selectedProjectAnimationClipId by mutableStateOf("")
+    private var showProjectSheet by mutableStateOf(false)
+    private var showTimelineSheet by mutableStateOf(false)
+    private var showAnimationEditorSheet by mutableStateOf(false)
+    private var pendingTimelineType: TimelineTrackType = TimelineTrackType.AUDIO
+
     // Dirección del caminar/correr (pedido del dueño: ver todas)
     private var direction by mutableStateOf("der")
 
@@ -149,12 +162,20 @@ class MainActivity : ComponentActivity() {
     private val videoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) cloneFromVideo(uri)
     }
+    private val projectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importProjectImage(uri)
+    }
+    private val timelineMediaLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) importProjectMedia(uri, pendingTimelineType)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // TTS inicializado aqui: onInit es asincrono y asi ya esta listo
         // cuando el usuario toca el boton "Voz" por primera vez
         ttsManager = TtsManager(this)
+        projectRepository = ProjectRepository(this)
+        projectAssetStore = ProjectAssetStore(this)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
@@ -185,11 +206,26 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column {
                                 Text("JEDL Studio", color = Gold, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                Text("Proyecto sin título", color = TextGray, fontSize = 12.sp)
+                                Text(activeProject?.name ?: "Proyecto sin título", color = TextGray, fontSize = 12.sp)
                             }
-                            if (showExportBtn) {
+                            TextButton(onClick = { showProjectSheet = true }) {
+                                Text("Proyectos", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
+                                else showTimelineSheet = true
+                            }) {
+                                Text("Timeline", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
+                                else showAnimationEditorSheet = true
+                            }) {
+                                Text("Poses", color = Gold, fontSize = 12.sp)
+                            }
+                            if (showExportBtn || activeProject != null) {
                                 Button(
-                                    onClick = { if (photo != null) showFormatSheet = true },
+                                    onClick = { showFormatSheet = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = Gold),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -476,6 +512,69 @@ class MainActivity : ComponentActivity() {
 
                     // Hoja inferior: Personaje (FASE B)
                     if (showAvatarSheet) AvatarSheet()
+
+                    if (showAnimationEditorSheet && activeProject != null) {
+                        ProjectAnimationEditorSheet(
+                            project = activeProject!!,
+                            initialSelectedClipId = selectedProjectAnimationClipId,
+                            onChange = { changed ->
+                                activeProject = projectRepository.save(changed)
+                                restoreProjectCharacterAndAnimation(activeProject!!, selectedProjectAnimationClipId)
+                                statusMsg = "Keyframe guardado en el proyecto"
+                                drawPreview()
+                            },
+                            onSelectClip = { clipId ->
+                                selectedProjectAnimationClipId = clipId
+                                restoreProjectCharacterAndAnimation(activeProject!!, clipId)
+                                drawPreview()
+                            },
+                            onDismiss = { showAnimationEditorSheet = false }
+                        )
+                    }
+
+                    if (showTimelineSheet && activeProject != null) {
+                        ProjectTimelineSheet(
+                            project = activeProject!!,
+                            onChange = { changed ->
+                                activeProject = projectRepository.save(changed)
+                                statusMsg = "Línea de tiempo guardada"
+                                drawPreview()
+                            },
+                            onImportMedia = { type ->
+                                pendingTimelineType = type
+                                timelineMediaLauncher.launch(if (type == TimelineTrackType.VIDEO) "video/*" else "audio/*")
+                            },
+                            onDismiss = { showTimelineSheet = false }
+                        )
+                    }
+
+                    if (showProjectSheet) {
+                        ProjectManagerSheet(
+                            repository = projectRepository,
+                            currentProject = activeProject,
+                            onImportResource = { projectImageLauncher.launch("image/*") },
+                            onCreate = { name ->
+                                activeProject = projectRepository.save(ProjectRepository.newProject(name))
+                                statusMsg = "Proyecto creado y guardado"
+                            },
+                            onSave = { project ->
+                                activeProject = projectRepository.save(project)
+                                statusMsg = "Proyecto guardado en este teléfono"
+                            },
+                            onOpen = { project ->
+                                activeProject = project
+                                restoreProjectCharacterAndAnimation(project)
+                                statusMsg = "Proyecto abierto"
+                                drawPreview()
+                            },
+                            onChange = { project ->
+                                activeProject = projectRepository.save(project)
+                                statusMsg = "Capa añadida y proyecto guardado"
+                                drawPreview()
+                            },
+                            onDismiss = { showProjectSheet = false }
+                        )
+                    }
                 }
             }
         }
@@ -604,7 +703,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun AvatarSheet() {
         ModalBottomSheet(
-            onDismissRequest = { showAvatarSheet = false },
+            onDismissRequest = { persistCharacterAppearance(); showAvatarSheet = false },
             containerColor = Panel
         ) {
             Column(
@@ -651,7 +750,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.weight(1f)
                         ) { Text("Recortar cara (IA)", color = Gold, fontSize = 11.sp) }
                         Button(
-                            onClick = { showAvatarSheet = false; faceEditMode = true; drawPreview() },
+                            onClick = { persistCharacterAppearance(); showAvatarSheet = false; faceEditMode = true; drawPreview() },
                             colors = ButtonDefaults.buttonColors(containerColor = Panel),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
@@ -1420,8 +1519,8 @@ class MainActivity : ComponentActivity() {
     // se crea una plantilla propia "Mi animación N".
     // ============================================================
     private fun enterPoseMode() {
-        if (photo == null) {
-            statusMsg = "Elegí una foto primero"
+        if (photo == null && !avatarMode) {
+            statusMsg = "Carga una foto o activa el modo Personaje"
             return
         }
         // Congelar la pose actual del template como punto de partida
@@ -1558,6 +1657,7 @@ class MainActivity : ComponentActivity() {
         }
         val mt = MotionTemplate("Mi animación " + (userTemplates.size + 1), frames, loop = false)
         userTemplates.add(mt)
+        persistMotionToProject(mt)
         poseMode = false
         customPose = null
         activeLimb = 0
@@ -1602,16 +1702,230 @@ class MainActivity : ComponentActivity() {
     // El export corre en el servicio en primer plano (anti-MIUI)
     private fun triggerExportService(w: Int, h: Int) {
         // v0.6.0 (FASE B): en modo personaje se puede exportar SIN foto
-        if (photo == null && !avatarMode) { statusMsg = "Elegí una foto o activá un Personaje"; return }
+        val hasProjectVisual = activeProject?.scenes?.firstOrNull()
+            ?.let(ProjectSceneContent::hasRenderableVisual) == true
+        val hasExportableVisual = if (activeProject != null) hasProjectVisual
+            else photo != null || (avatarMode && avatarSpec != null)
+        if (!hasExportableVisual) {
+            statusMsg = "Añade una capa visual exportable o activa un Personaje"
+            return
+        }
         statusMsg = "Iniciando exportación (" + w + "×" + h + ")..."
         ExportService.onStatus = { msg -> runOnUiThread { statusMsg = msg } }
         ExportService.start(
             this, photo, backgroundPhoto, mesh, textOverlay, template, w, h,
             textX, textY, textSizePx, actorX, actorY,
-            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction
+            avatarMode, avatarSpec, if (faceFromPhoto) faceBitmap else null, direction,
+            activeProject?.scenes?.firstOrNull(),
+            activeProject?.id,
+            activeProject?.frameRate ?: 30
         )
     }
 
+    private fun resolveProjectBitmap(relativePath: String): Bitmap? {
+        val projectId = activeProject?.id ?: return null
+        val cacheKey = projectId + "/" + relativePath
+        projectBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            projectAssetStore.openAsset(projectId, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+            projectAssetStore.openAsset(projectId, relativePath).use { input ->
+                BitmapFactory.decodeStream(input, null, options)?.also { decoded -> projectBitmapCache.put(cacheKey, decoded) }
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun importProjectMedia(uri: Uri, trackType: TimelineTrackType) {
+        val project = activeProject
+        if (project == null) {
+            Toast.makeText(this, "Crea o abre un proyecto antes de importar medios", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("No se pudo abrir el medio")
+                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "media.bin", maxBytes = 128L * 1024L * 1024L) }
+                val retriever = MediaMetadataRetriever()
+                val sourceDuration = try {
+                    retriever.setDataSource(this, uri)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5_000L
+                } finally { retriever.release() }
+                val scene = project.scenes.first()
+                val duration = sourceDuration.coerceIn(1L, scene.durationMillis)
+                val existing = scene.timelineTracks.firstOrNull { it.type == trackType }
+                val track = existing ?: TimelineTrackDocument(
+                    name = when (trackType) { TimelineTrackType.VIDEO -> "Vídeo"; TimelineTrackType.VOICE -> "Voz"; TimelineTrackType.MUSIC -> "Música"; else -> "Audio" },
+                    type = trackType
+                )
+                val clip = TimelineClipDocument(
+                    name = (uri.lastPathSegment ?: "media.bin").substringAfterLast("/").take(100),
+                    assetPath = imported.relativePath,
+                    startMillis = 0L,
+                    durationMillis = duration,
+                    sourceStartMillis = 0L,
+                    sourceEndMillis = duration
+                )
+                val changedTrack = track.copy(clips = track.clips + clip)
+                val tracks = if (existing == null) scene.timelineTracks + changedTrack
+                    else scene.timelineTracks.map { if (it.id == existing.id) changedTrack else it }
+                val updated = project.copy(scenes = listOf(scene.copy(timelineTracks = tracks)) + project.scenes.drop(1))
+                val saved = projectRepository.save(updated)
+                runOnUiThread {
+                    activeProject = saved
+                    statusMsg = "Medio importado y guardado en la pista " + trackType.name + "; reproducción/exportación multipista pendiente"
+                    showTimelineSheet = true
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "No se pudo importar el medio", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    private fun currentCharacterAppearance() = CharacterAppearanceDocument(
+        name = avatarSpec.name,
+        skin = avatarSpec.skin,
+        hair = avatarSpec.hair,
+        hairStyle = avatarSpec.hairStyle,
+        shirt = avatarSpec.shirt,
+        pants = avatarSpec.pants,
+        shoes = avatarSpec.shoes,
+        beard = avatarSpec.beard,
+        enabled = avatarMode,
+        direction = direction,
+        actorX = actorX,
+        actorY = actorY
+    )
+
+    private fun persistCharacterAppearance() {
+        val project = activeProject ?: run {
+            statusMsg = "Crea un proyecto para guardar el personaje"
+            return
+        }
+        try {
+            val scene = project.scenes.first()
+            val existing = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+            val character = (existing ?: LayerDocument(name = avatarSpec.name, type = LayerType.CHARACTER)).copy(
+                name = avatarSpec.name,
+                characterAppearance = currentCharacterAppearance(),
+                transform = Transform2D(x = actorX, y = actorY)
+            )
+            val layers = if (existing == null) scene.layers + character
+                else scene.layers.map { if (it.id == existing.id) character else it }
+            activeProject = projectRepository.save(project.copy(
+                scenes = listOf(scene.copy(layers = layers)) + project.scenes.drop(1)
+            ))
+            statusMsg = "Apariencia del personaje guardada"
+        } catch (error: Exception) {
+            statusMsg = "No se pudo guardar el personaje: " + (error.message ?: "error")
+        }
+    }
+
+    private fun persistMotionToProject(motion: MotionTemplate) {
+        try {
+            var project = activeProject ?: projectRepository.save(ProjectRepository.newProject("Mi proyecto"))
+            val scene = project.scenes.first()
+            val existing = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+            val character = (existing ?: LayerDocument(name = avatarSpec.name, type = LayerType.CHARACTER)).copy(
+                name = avatarSpec.name,
+                characterAppearance = currentCharacterAppearance(),
+                transform = Transform2D(x = actorX, y = actorY)
+            )
+            val layers = if (existing == null) scene.layers + character
+                else scene.layers.map { if (it.id == existing.id) character else it }
+            val clip = ProjectAnimationMapper.fromMotionTemplate(
+                motion, character.id, scene.durationMillis, loop = motion.loop
+            )
+            val updatedScene = scene.copy(
+                layers = layers,
+                animationClips = scene.animationClips.filterNot { it.targetLayerId == character.id && it.name == motion.name } + clip
+            )
+            project = projectRepository.save(project.copy(
+                scenes = listOf(updatedScene) + project.scenes.drop(1)
+            ))
+            activeProject = project
+            statusMsg = "Personaje y animación guardados en el proyecto"
+        } catch (error: Exception) {
+            statusMsg = "No se pudo guardar la animación: " + (error.message ?: "error")
+        }
+    }
+
+    private fun restoreProjectCharacterAndAnimation(project: ProjectDocument, preferredClipId: String? = null) {
+        val scene = project.scenes.firstOrNull() ?: return
+        templatePrev = ActiveTemplate.of("idle")
+        template = ActiveTemplate.of("idle")
+        customPose = null
+        val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+        if (character?.characterAppearance == null) {
+            avatarMode = false
+            avatarSpec = Avatars.presets().first()
+            actorX = 0.5f
+            actorY = 0.55f
+            direction = "der"
+        }
+        val appearance = character?.characterAppearance
+        if (appearance != null) {
+            avatarSpec = AvatarSpec(
+                appearance.name, appearance.skin, appearance.hair, appearance.hairStyle,
+                appearance.shirt, appearance.pants, appearance.shoes, appearance.beard
+            )
+            avatarMode = appearance.enabled
+            direction = appearance.direction
+            actorX = appearance.actorX
+            actorY = appearance.actorY
+        }
+        val characterClips = character?.let { target -> scene.animationClips.filter { it.targetLayerId == target.id } }.orEmpty()
+        val clip = characterClips.firstOrNull { it.id == preferredClipId }
+            ?: characterClips.firstOrNull()
+        selectedProjectAnimationClipId = clip?.id.orEmpty()
+        if (clip != null) {
+            try {
+                val restored = ProjectAnimationMapper.toMotionTemplate(clip)
+                userTemplates.removeAll { it.name == restored.name }
+                userTemplates.add(restored)
+                templatePrev = template
+                template = ActiveTemplate(null, restored)
+            } catch (_: Exception) {
+                statusMsg = "El personaje se abrió, pero su animación no pudo restaurarse"
+            }
+        }
+    }
+
+    private fun importProjectImage(uri: Uri) {
+        val project = activeProject
+        if (project == null) {
+            Toast.makeText(this, "Crea o abre un proyecto antes de importar recursos", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.IOException("No se pudo abrir la imagen")
+                val imported = input.use { projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "image.bin") }
+                val scene = project.scenes.first()
+                val layer = LayerDocument(
+                    name = "Imagen " + (scene.layers.count { it.type == LayerType.IMAGE } + 1),
+                    type = LayerType.IMAGE,
+                    assetPath = imported.relativePath,
+                    zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                )
+                val updated = project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(scene.copy(layers = scene.layers + layer)) + project.scenes.drop(1)
+                )
+                val saved = projectRepository.save(updated)
+                runOnUiThread {
+                    activeProject = saved
+                    showExportBtn = true
+                    statusMsg = "Imagen importada y guardada en el proyecto"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { Toast.makeText(this, error.message ?: "No se pudo importar la imagen", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
     private fun drawPreview() {
         val holder = previewSurface?.holder ?: return
         val canvas = holder.lockCanvas() ?: return
@@ -1640,7 +1954,9 @@ class MainActivity : ComponentActivity() {
                     actorX = actorX, actorY = actorY,
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
-                    direction = direction
+                    direction = direction,
+                    projectScene = activeProject?.scenes?.firstOrNull(),
+                    assetResolver = ::resolveProjectBitmap
                 )
                 canvas.restore()
             } else {
@@ -1654,7 +1970,9 @@ class MainActivity : ComponentActivity() {
                     actorX = actorX, actorY = actorY,
                     avatarMode = avatarMode, avatarSpec = avatarSpec,
                     avatarFace = if (faceFromPhoto) faceBitmap else null,
-                    direction = direction
+                    direction = direction,
+                    projectScene = activeProject?.scenes?.firstOrNull(),
+                    assetResolver = ::resolveProjectBitmap
                 )
             }
             if (poseMode && customPose != null) drawPoseHandles(canvas, customPose!!)

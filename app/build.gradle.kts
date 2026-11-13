@@ -14,18 +14,8 @@ android {
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
-    signingConfigs {
-        create("jedl") {
-            storeFile = rootProject.file("debug.keystore")
-            storePassword = "jedl2026"
-            keyAlias = "jedl"
-            keyPassword = "jedl2026"
-        }
-    }
-    buildTypes {
-        debug { signingConfig = signingConfigs.getByName("jedl") }
-        release { isMinifyEnabled = false }
-    }
+    // Android administra la clave debug localmente; no versionar claves ni contraseñas.
+    buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -38,6 +28,8 @@ android {
     }
 }
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")

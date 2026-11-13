@@ -9,6 +9,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
@@ -56,7 +58,24 @@ class ExportService : Service() {
     private fun doExport() {
         val photo = pendingPhoto
         val text = pendingText
-        if (photo == null && !(pendingAvatarMode && pendingAvatarSpec != null)) { stopSelf(); return }
+        val hasProjectVisual = pendingProjectScene?.let(ProjectSceneContent::hasRenderableVisual) == true
+        val hasLegacyVisual = photo != null || (pendingAvatarMode && pendingAvatarSpec != null)
+        val hasRenderableOutput = if (pendingProjectScene != null) hasProjectVisual else hasLegacyVisual
+        if (!hasRenderableOutput) {
+            onStatus?.invoke("La escena no contiene elementos visuales exportables")
+            pendingPhoto = null
+            pendingBackground = null
+            pendingMesh = null
+            pendingAvatarSpec = null
+            pendingAvatarFace = null
+            pendingProjectScene = null
+            pendingProjectId = null
+            pendingText = ""
+            pendingFrameRate = 30
+            synchronized(exportLock) { exportInProgress = false }
+            stopSelf()
+            return
+        }
 
         val nm = getSystemService(NotificationManager::class.java)
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -65,7 +84,28 @@ class ExportService : Service() {
 
         try {
             val tempFile = File(cacheDir, "temp_export.mp4")
-            val exporter = Mp4Exporter(pendingWidth, pendingHeight, 30, 5f)
+            val sceneDuration = (pendingProjectScene?.durationMillis ?: 5_000L).coerceAtLeast(1L)
+            val exporter = Mp4Exporter(pendingWidth, pendingHeight, pendingFrameRate, sceneDuration / 1_000f)
+            val projectId = pendingProjectId
+            val assetStore = projectId?.let { ProjectAssetStore(this) }
+            val imageCache = object : LruCache<String, Bitmap>(24 * 1024) {
+                override fun sizeOf(key: String, value: Bitmap): Int = maxOf(1, value.byteCount / 1024)
+            }
+            fun resolveExportBitmap(relativePath: String): Bitmap? {
+                val id = projectId ?: return null
+                val store = assetStore ?: return null
+                imageCache.get(relativePath)?.let { if (!it.isRecycled) return it }
+                return try {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    store.openAsset(id, relativePath).use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                    store.openAsset(id, relativePath).use { input ->
+                        BitmapFactory.decodeStream(input, null, options)?.also { imageCache.put(relativePath, it) }
+                    }
+                } catch (_: Exception) { null }
+            }
             val ok = exporter.export(tempFile.absolutePath, { pct ->
                 nm.notify(NOTIF_ID, buildNotification("Exportando… $pct%", pct))
                 onStatus?.invoke("Exportando… $pct%")
@@ -76,7 +116,9 @@ class ExportService : Service() {
                     textX = pendingTextX, textY = pendingTextY, textSize = pendingTextSize,
                     actorX = pendingActorX, actorY = pendingActorY,
                     avatarMode = pendingAvatarMode, avatarSpec = pendingAvatarSpec,
-                    avatarFace = pendingAvatarFace, direction = pendingDirection
+                    avatarFace = pendingAvatarFace, direction = pendingDirection,
+                    projectScene = pendingProjectScene,
+                    assetResolver = ::resolveExportBitmap
                 )
             }
 
@@ -99,11 +141,16 @@ class ExportService : Service() {
             // pertenece a la MainActivity, no se recicla aquí)
             pendingAvatarSpec = null
             pendingAvatarFace = null
+            pendingProjectScene = null
+            pendingProjectId = null
+            pendingFrameRate = 30
+            synchronized(exportLock) { exportInProgress = false }
             stopSelf()
         }
     }
 
     private fun saveToGallery(file: File) {
+        if (!file.isFile || file.length() <= 0L) throw java.io.IOException("El archivo MP4 está vacío")
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "JEDL_Video_" + System.currentTimeMillis() + ".mp4")
             put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
@@ -111,9 +158,17 @@ class ExportService : Service() {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/JEDL")
             }
         }
-        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return
-        contentResolver.openOutputStream(uri)?.use { out ->
-            file.inputStream().use { input -> input.copyTo(out) }
+        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw java.io.IOException("No se pudo crear el elemento de vídeo en la Galería")
+        try {
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw java.io.IOException("No se pudo abrir el destino de la Galería")
+            output.use { out ->
+                file.inputStream().use { input -> input.copyTo(out) }
+            }
+        } catch (error: Exception) {
+            contentResolver.delete(uri, null, null)
+            throw error
         }
     }
 
@@ -140,7 +195,12 @@ class ExportService : Service() {
         @Volatile var pendingAvatarSpec: AvatarSpec? = null
         @Volatile var pendingAvatarFace: Bitmap? = null
         @Volatile var pendingDirection: String = "der"
+        @Volatile var pendingProjectScene: SceneDocument? = null
+        @Volatile var pendingProjectId: String? = null
+        @Volatile var pendingFrameRate: Int = 30
         @Volatile var onStatus: ((String) -> Unit)? = null
+        private val exportLock = Any()
+        @Volatile private var exportInProgress = false
 
         fun start(
             context: Context, photo: Bitmap?, background: Bitmap?,
@@ -149,8 +209,19 @@ class ExportService : Service() {
             textX: Float, textY: Float, textSize: Float,
             actorX: Float = 0.5f, actorY: Float = 0.55f,
             avatarMode: Boolean = false, avatarSpec: AvatarSpec? = null,
-            avatarFace: Bitmap? = null, direction: String = "der"
+            avatarFace: Bitmap? = null, direction: String = "der",
+            projectScene: SceneDocument? = null,
+            projectId: String? = null,
+            frameRate: Int = 30
         ) {
+            synchronized(exportLock) {
+                if (exportInProgress) {
+                    onStatus?.invoke("Ya hay una exportación en curso")
+                    return
+                }
+                exportInProgress = true
+            }
+            try {
             pendingPhoto = photo
             pendingBackground = background
             pendingMesh = mesh
@@ -167,9 +238,16 @@ class ExportService : Service() {
             pendingAvatarSpec = avatarSpec
             pendingAvatarFace = avatarFace
             pendingDirection = direction
+            pendingProjectScene = projectScene
+            pendingProjectId = projectId
+            pendingFrameRate = frameRate.coerceIn(1, 60)
             val intent = Intent(context, ExportService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
             else context.startService(intent)
+            } catch (error: Exception) {
+                synchronized(exportLock) { exportInProgress = false }
+                throw error
+            }
         }
     }
 }
