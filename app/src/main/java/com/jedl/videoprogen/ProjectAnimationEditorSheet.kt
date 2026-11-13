@@ -38,10 +38,17 @@ fun ProjectAnimationEditorSheet(
     onDismiss: () -> Unit
 ) {
     val scene = project.scenes.first()
+    val characterLayers = scene.layers.filter { it.type == LayerType.CHARACTER }
     var selectedClipId by remember(project.id, initialSelectedClipId) {
         mutableStateOf(
             scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.id
                 ?: scene.animationClips.firstOrNull()?.id.orEmpty()
+        )
+    }
+    var selectedTargetLayerId by remember(project.id, initialSelectedClipId) {
+        mutableStateOf(
+            scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.targetLayerId
+                ?: characterLayers.firstOrNull()?.id.orEmpty()
         )
     }
     var selectedTime by remember(project.id) { mutableStateOf(0L) }
@@ -50,7 +57,6 @@ fun ProjectAnimationEditorSheet(
     var angleText by remember(project.id) { mutableStateOf("0") }
     var error by remember(project.id) { mutableStateOf("") }
     val selectedClip = scene.animationClips.firstOrNull { it.id == selectedClipId }
-    val selectedFrame = selectedClip?.keyframes?.firstOrNull { it.timeMillis == selectedTime }
 
     fun commitScene(updated: SceneDocument) {
         val saved = project.copy(scenes = listOf(updated) + project.scenes.drop(1))
@@ -68,8 +74,42 @@ fun ProjectAnimationEditorSheet(
         ) {
             Text("Editor de poses y keyframes", color = Color(0xFFF5B841), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Cada pose conserva los ángulos del rig. Los cambios se guardan en el proyecto.", color = Color(0xFFE7E8EE))
+
+            if (characterLayers.isNotEmpty()) {
+                Text("Personaje que vas a animar", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
+                characterLayers.forEach { character ->
+                    val selected = character.id == selectedTargetLayerId
+                    Column(
+                        modifier = Modifier.fillMaxWidth().background(
+                            if (selected) Color(0xFF34302A) else Color(0xFF1B1D24),
+                            RoundedCornerShape(9.dp)
+                        ).clickable {
+                            selectedTargetLayerId = character.id
+                            val targetClip = scene.animationClips.firstOrNull { it.targetLayerId == character.id }
+                            selectedClipId = targetClip?.id.orEmpty()
+                            if (targetClip != null) {
+                                onSelectClip(targetClip.id)
+                                selectedTime = targetClip.keyframes.firstOrNull()?.timeMillis ?: 0L
+                                timeText = selectedTime.toString()
+                            } else {
+                                selectedTime = 0L
+                                timeText = "0"
+                            }
+                        }.padding(10.dp)
+                    ) {
+                        Text(character.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (selected) "Seleccionado" else "Toca para seleccionar",
+                            color = Color(0xFFE7E8EE),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
             Button(onClick = {
-                val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+                val character = characterLayers.firstOrNull { it.id == selectedTargetLayerId }
+                    ?: characterLayers.firstOrNull()
                     ?: LayerDocument(name = "Personaje", type = LayerType.CHARACTER)
                 val layers = if (scene.layers.any { it.id == character.id }) scene.layers
                     else scene.layers + character
@@ -83,34 +123,39 @@ fun ProjectAnimationEditorSheet(
                     )
                 )
                 commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
+                selectedTargetLayerId = character.id
                 selectedClipId = clip.id
                 onSelectClip(clip.id)
                 selectedTime = 0L
                 timeText = "0"
-            }, modifier = Modifier.fillMaxWidth()) { Text("Crear animación para el personaje") }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (characterLayers.size > 1) "Crear animación para el personaje seleccionado" else "Crear animación para el personaje")
+            }
 
             if (scene.animationClips.isEmpty()) {
                 Text("Todavía no hay clips de animación guardados.", color = Color(0xFFE7E8EE))
             }
             scene.animationClips.forEach { clip ->
+                val targetName = scene.layers.firstOrNull { it.id == clip.targetLayerId }?.name ?: "Personaje"
                 Column(
                     modifier = Modifier.fillMaxWidth().background(
                         if (clip.id == selectedClipId) Color(0xFF34302A) else Color(0xFF1B1D24),
                         RoundedCornerShape(9.dp)
                     ).clickable {
                         selectedClipId = clip.id
+                        selectedTargetLayerId = clip.targetLayerId
                         onSelectClip(clip.id)
                         selectedTime = clip.keyframes.firstOrNull()?.timeMillis ?: 0L
                         timeText = selectedTime.toString()
                     }.padding(10.dp)
                 ) {
                     Text(clip.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text("${clip.keyframes.size} poses · ${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
+                    Text("\${targetName} · \${clip.keyframes.size} poses · \${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
                 }
             }
 
             if (selectedClip != null) {
-                Text("Fotogramas de «${selectedClip.name}»", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
+                Text("Fotogramas de «\${selectedClip.name}»", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
                 selectedClip.keyframes.forEach { frame ->
                     Row(
                         modifier = Modifier.fillMaxWidth().background(
@@ -123,8 +168,8 @@ fun ProjectAnimationEditorSheet(
                         }.padding(10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Pose · ${frame.timeMillis} ms", color = Color.White)
-                        Text("${frame.boneAngles.size} articulaciones", color = Color(0xFFE7E8EE))
+                        Text("Pose · \${frame.timeMillis} ms", color = Color.White)
+                        Text("\${frame.boneAngles.size} articulaciones", color = Color(0xFFE7E8EE))
                     }
                 }
                 OutlinedTextField(
