@@ -39,17 +39,13 @@ fun ProjectAnimationEditorSheet(
 ) {
     val scene = project.scenes.first()
     val characterLayers = scene.layers.filter { it.type == LayerType.CHARACTER }
+    val initialClip = scene.animationClips.firstOrNull { it.id == initialSelectedClipId }
+        ?: scene.animationClips.firstOrNull()
     var selectedClipId by remember(project.id, initialSelectedClipId) {
-        mutableStateOf(
-            scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.id
-                ?: scene.animationClips.firstOrNull()?.id.orEmpty()
-        )
+        mutableStateOf(initialClip?.id.orEmpty())
     }
     var selectedTargetLayerId by remember(project.id, initialSelectedClipId) {
-        mutableStateOf(
-            scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.targetLayerId
-                ?: characterLayers.firstOrNull()?.id.orEmpty()
-        )
+        mutableStateOf(initialClip?.targetLayerId ?: characterLayers.firstOrNull()?.id.orEmpty())
     }
     var selectedTime by remember(project.id) { mutableStateOf(0L) }
     var timeText by remember(project.id) { mutableStateOf("0") }
@@ -150,12 +146,12 @@ fun ProjectAnimationEditorSheet(
                     }.padding(10.dp)
                 ) {
                     Text(clip.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text("\${targetName} · \${clip.keyframes.size} poses · \${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
+                    Text("${targetName} · ${clip.keyframes.size} poses · ${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
                 }
             }
 
             if (selectedClip != null) {
-                Text("Fotogramas de «\${selectedClip.name}»", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
+                Text("Fotogramas de «${selectedClip.name}»", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
                 selectedClip.keyframes.forEach { frame ->
                     Row(
                         modifier = Modifier.fillMaxWidth().background(
@@ -168,8 +164,8 @@ fun ProjectAnimationEditorSheet(
                         }.padding(10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Pose · \${frame.timeMillis} ms", color = Color.White)
-                        Text("\${frame.boneAngles.size} articulaciones", color = Color(0xFFE7E8EE))
+                        Text("Pose · ${frame.timeMillis} ms", color = Color.White)
+                        Text("${frame.boneAngles.size} articulaciones", color = Color(0xFFE7E8EE))
                     }
                 }
                 OutlinedTextField(
