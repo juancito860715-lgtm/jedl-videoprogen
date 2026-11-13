@@ -26,11 +26,11 @@ object ProjectAnimationSampler {
         require(clip.durationMillis > 0L) { "La duración del clip debe ser positiva" }
         val frames = clip.keyframes
         require(frames.isNotEmpty()) { "El clip no contiene keyframes" }
-        require(frames.all { it.timeMillis in 0L..clip.durationMillis }) {
-            "Hay keyframes fuera de la duración del clip"
-        }
-        require(frames.zipWithNext().all { (a, b) -> a.timeMillis < b.timeMillis }) {
-            "Los keyframes deben estar ordenados y no repetir tiempos"
+        // ProjectDocumentValidator comprueba el orden y los límites al guardar/abrir.
+        // Aquí solo se hacen comprobaciones O(1): el sampler se ejecuta por cada frame.
+        require(frames.first().timeMillis in 0L..clip.durationMillis &&
+            frames.last().timeMillis in 0L..clip.durationMillis) {
+            "Los keyframes están fuera de la duración del clip"
         }
 
         val elapsed = elapsedMillis.coerceAtLeast(0L)
