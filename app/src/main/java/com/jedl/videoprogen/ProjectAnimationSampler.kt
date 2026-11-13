@@ -15,11 +15,11 @@ object ProjectAnimationSampler {
      */
     fun poseForLayer(
         scene: SceneDocument,
-        layerId: String,
-        elapsedMillis: Long
+        layer: LayerDocument,
+        sceneTimeMillis: Long
     ): Pose? {
-        val clip = scene.animationClips.firstOrNull { it.targetLayerId == layerId } ?: return null
-        return sample(clip, elapsedMillis)
+        val clip = scene.animationClips.firstOrNull { it.targetLayerId == layer.id } ?: return null
+        return sample(clip, sceneTimeMillis - layer.startMillis)
     }
 
     fun sample(clip: AnimationClipDocument, elapsedMillis: Long): Pose {
