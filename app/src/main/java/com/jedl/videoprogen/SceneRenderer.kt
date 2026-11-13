@@ -70,7 +70,7 @@ object SceneRenderer {
             }
             val layerPose = clipPose ?: basePose
             val effectiveDirection = appearance?.direction ?: direction
-            val avatarPose = if (effectiveAvatarMode) {
+            val avatarPose = if (effectiveAvatarMode && effectiveAvatarSpec != null) {
                 PuppetEngine.applyDirection(
                     layerPose,
                     if (clipPose == null) template.builtin ?: "" else "",
