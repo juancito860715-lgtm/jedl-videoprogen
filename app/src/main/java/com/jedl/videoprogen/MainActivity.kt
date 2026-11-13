@@ -1877,7 +1877,7 @@ class MainActivity : ComponentActivity() {
             actorY = appearance.actorY
         }
         val characterClips = character?.let { target -> scene.animationClips.filter { it.targetLayerId == target.id } }.orEmpty()
-        val clip = characterClips.firstOrNull { it.id == preferredClipId }
+        val clip = scene.animationClips.firstOrNull { it.id == preferredClipId }
             ?: characterClips.firstOrNull()
         selectedProjectAnimationClipId = clip?.id.orEmpty()
         if (clip != null) {
