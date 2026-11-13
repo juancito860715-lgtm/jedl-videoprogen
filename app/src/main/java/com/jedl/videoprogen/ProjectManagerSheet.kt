@@ -112,8 +112,10 @@ fun ProjectManagerSheet(
                     val scene = currentProject.scenes.first()
                     val characterCount = scene.layers.count { it.type == LayerType.CHARACTER }
                     val preset = Avatars.presets()[characterCount % Avatars.presets().size]
-                    val actorX = if (characterCount % 2 == 0) 0.34f else 0.66f
+                    val positions = listOf(0.5f, 0.72f, 0.28f, 0.84f, 0.16f)
+                    val actorX = positions[characterCount % positions.size]
                     val actorY = 0.55f
+                    val characterScale = if (characterCount == 0) 1f else 0.72f
                     val character = LayerDocument(
                         name = "Personaje ${characterCount + 1}",
                         type = LayerType.CHARACTER,
@@ -130,7 +132,12 @@ fun ProjectManagerSheet(
                             actorX = actorX,
                             actorY = actorY
                         ),
-                        transform = Transform2D(x = actorX, y = actorY),
+                        transform = Transform2D(
+                            x = actorX,
+                            y = actorY,
+                            scaleX = characterScale,
+                            scaleY = characterScale
+                        ),
                         zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
                     )
                     val changed = currentProject.copy(
