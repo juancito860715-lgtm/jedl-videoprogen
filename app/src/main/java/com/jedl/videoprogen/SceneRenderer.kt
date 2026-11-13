@@ -59,26 +59,27 @@ object SceneRenderer {
 
             // Cada capa de personaje puede tener un clip persistente distinto.
             // Si no tiene clip propio, conserva el movimiento activo del editor.
-            val layerPose = if (layer != null && projectScene != null) {
+            val clipPose = if (layer != null && projectScene != null) {
                 ProjectAnimationSampler.poseForLayer(
                     projectScene,
                     layer.id,
                     sceneTime - layer.startMillis
-                ) ?: basePose
+                )
             } else {
-                basePose
+                null
             }
+            val layerPose = clipPose ?: basePose
             val effectiveDirection = appearance?.direction ?: direction
-            val builtinForDirection = if (
-                layer != null && projectScene != null &&
-                ProjectAnimationSampler.poseForLayer(projectScene, layer.id, sceneTime - layer.startMillis) != null
-            ) "" else template.builtin ?: ""
-            val renderedPose = PuppetEngine.applyDirection(
-                layerPose,
-                builtinForDirection,
-                effectiveDirection
-            )
-            val solved = PuppetRig.HUMANOID.solve(renderedPose.angles, 0f, 0f)
+            val avatarPose = if (effectiveAvatarMode) {
+                PuppetEngine.applyDirection(
+                    layerPose,
+                    if (clipPose == null) template.builtin ?: "" else "",
+                    effectiveDirection
+                )
+            } else {
+                layerPose
+            }
+            val solved = PuppetRig.HUMANOID.solve(avatarPose.angles, 0f, 0f)
 
             canvas.save()
             if (layer == null) {
@@ -86,7 +87,7 @@ object SceneRenderer {
             } else {
                 canvas.translate(w * (effectiveActorX - layerX), h * (effectiveActorY - layerY))
             }
-            canvas.translate(renderedPose.sway * unit, renderedPose.bob * unit)
+            canvas.translate(avatarPose.sway * unit, avatarPose.bob * unit)
             canvas.scale(unit, unit)
 
             if (effectiveAvatarMode && effectiveAvatarSpec != null) {
