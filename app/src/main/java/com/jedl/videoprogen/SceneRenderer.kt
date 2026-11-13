@@ -37,10 +37,7 @@ object SceneRenderer {
         val sceneTime = projectScene?.let {
             (progress.coerceIn(0f, 1f) * it.durationMillis).toLong()
         } ?: 0L
-        val characterLayer = projectScene?.layers
-            ?.filter { it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime) }
-            ?.maxByOrNull { it.zIndex }
-        val pose = overridePose ?: run {
+        val basePose = overridePose ?: run {
             val s = blend * blend * (3f - 2f * blend)
             PuppetEngine.lerpPose(
                 PuppetEngine.poseForActive(prevTemplate, progress),
@@ -59,7 +56,30 @@ object SceneRenderer {
             val effectiveAvatarSpec = appearance?.let {
                 AvatarSpec(it.name, it.skin, it.hair, it.hairStyle, it.shirt, it.pants, it.shoes, it.beard)
             } ?: avatarSpec
-            val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+
+            // Cada capa de personaje puede tener un clip persistente distinto.
+            // Si no tiene clip propio, conserva el movimiento activo del editor.
+            val clipPose = if (layer != null && projectScene != null) {
+                ProjectAnimationSampler.poseForLayer(
+                    projectScene,
+                    layer,
+                    sceneTime
+                )
+            } else {
+                null
+            }
+            val layerPose = clipPose ?: basePose
+            val effectiveDirection = appearance?.direction ?: direction
+            val avatarPose = if (effectiveAvatarMode && effectiveAvatarSpec != null) {
+                PuppetEngine.applyDirection(
+                    layerPose,
+                    if (clipPose == null) template.builtin ?: "" else "",
+                    effectiveDirection
+                )
+            } else {
+                layerPose
+            }
+            val solved = PuppetRig.HUMANOID.solve(avatarPose.angles, 0f, 0f)
 
             canvas.save()
             if (layer == null) {
@@ -67,15 +87,12 @@ object SceneRenderer {
             } else {
                 canvas.translate(w * (effectiveActorX - layerX), h * (effectiveActorY - layerY))
             }
-            canvas.translate(pose.sway * unit, pose.bob * unit)
+            canvas.translate(avatarPose.sway * unit, avatarPose.bob * unit)
             canvas.scale(unit, unit)
 
             if (effectiveAvatarMode && effectiveAvatarSpec != null) {
-                val effectiveDirection = appearance?.direction ?: direction
-                val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
-                val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
-                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, avatarFace, effectiveDirection)
+                AvatarRenderer.draw(canvas, solved, effectiveAvatarSpec, avatarFace, effectiveDirection)
             } else {
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
             }
