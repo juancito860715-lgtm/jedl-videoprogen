@@ -47,6 +47,9 @@ object AvatarRenderer {
     // ============================================================
     private const val DEBUG_RECTS = false
 
+    @Volatile var lastRenderPath: String = "NOT_RENDERED"
+        private set
+
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
         val r = ((argb ushr 16) and 0xFF) * 3 / 4
@@ -61,12 +64,17 @@ object AvatarRenderer {
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
         if (DEBUG_RECTS) {
+            lastRenderPath = "DEBUG_RECTS"
             drawDebugRects(canvas, solved)
             return
         }
 
-        // Piezas PNG del banco (F2+): si hay manifest, mandan.
-        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) return
+        // Registrar la ruta realmente ejecutada, no solo la disponibilidad del manifest.
+        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) {
+            lastRenderPath = "PNG_PIECES"
+            return
+        }
+        lastRenderPath = "VECTOR_FALLBACK"
 
         // Piezas vectoriales del estilo base. El orden procede del contrato compartido.
         for (name in AvatarRenderOrder.backToFront) {
