@@ -1,9 +1,7 @@
 package com.jedl.videoprogen
 
 import kotlin.math.PI
-import kotlin.math.acos
 import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -88,7 +86,7 @@ object SkeletalMath {
 
         val dx = target.x - root.x
         val dy = target.y - root.y
-        val rawDistance = hypot(dx, dy)
+        val rawDistance = sqrt(dx * dx + dy * dy)
         val maxReach = upperLength + lowerLength
         val minReach = kotlin.math.abs(upperLength - lowerLength)
         val distance = rawDistance.coerceIn(minReach + EPSILON, maxReach - EPSILON)
