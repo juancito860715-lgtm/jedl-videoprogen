@@ -1968,6 +1968,7 @@ class MainActivity : ComponentActivity() {
             photoLayerZIndex = photoLayer?.zIndex,
             photoAssetPath = photoLayer?.assetPath,
             faceCutterExecuted = lastFaceCutterExecuted,
+            faceCutterReturnedBitmap = if (lastFaceCutterExecuted) lastFaceCutterReturnedBitmap else null,
             faceBitmapValid = face != null && !face.isRecycled && face.width > 0 && face.height > 0,
             faceBitmapWidth = face?.takeUnless { it.isRecycled }?.width,
             faceBitmapHeight = face?.takeUnless { it.isRecycled }?.height,
