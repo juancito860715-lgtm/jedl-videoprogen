@@ -26,6 +26,7 @@ data class DeveloperDiagnosticsSnapshot(
     val photoLayerZIndex: Int? = null,
     val photoAssetPath: String? = null,
     val faceCutterExecuted: Boolean = false,
+    val faceCutterReturnedBitmap: Boolean? = null,
     val faceBitmapValid: Boolean = false,
     val faceBitmapWidth: Int? = null,
     val faceBitmapHeight: Int? = null,
@@ -54,6 +55,7 @@ data class DeveloperDiagnosticsSnapshot(
 
         val face = JSONObject()
             .put("faceCutterExecuted", faceCutterExecuted)
+            .putNullable("faceCutterReturnedBitmap", faceCutterReturnedBitmap)
             .put("bitmapValid", faceBitmapValid)
             .putNullable("width", faceBitmapWidth)
             .putNullable("height", faceBitmapHeight)
