@@ -3,7 +3,7 @@ package com.jedl.videoprogen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.hypot
+import kotlin.math.sqrt
 
 class SkeletalMathTest {
     @Test
@@ -29,9 +29,9 @@ class SkeletalMathTest {
             upperLength = 5f,
             lowerLength = 5f
         )
-        assertEquals(6f, hypot(result.end.x, result.end.y), 0.0001f)
-        assertEquals(5f, hypot(result.joint.x, result.joint.y), 0.0001f)
-        assertEquals(5f, hypot(result.end.x - result.joint.x, result.end.y - result.joint.y), 0.0001f)
+        assertEquals(6f, sqrt(result.end.x * result.end.x + result.end.y * result.end.y), 0.0001f)
+        assertEquals(5f, sqrt(result.joint.x * result.joint.x + result.joint.y * result.joint.y), 0.0001f)
+        assertEquals(5f, sqrt((result.end.x - result.joint.x) * (result.end.x - result.joint.x) + (result.end.y - result.joint.y) * (result.end.y - result.joint.y)), 0.0001f)
     }
 
     @Test
