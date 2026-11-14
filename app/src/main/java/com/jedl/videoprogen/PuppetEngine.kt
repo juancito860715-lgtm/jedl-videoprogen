@@ -376,7 +376,7 @@ object PuppetEngine {
         if (t <= 0f) return a
         val keys = a.angles.keys.toSet() + b.angles.keys
         val m = LinkedHashMap<String, Float>()
-        for (k in keys) m[k] = (a.angles[k] ?: 0f) * (1f - t) + (b.angles[k] ?: 0f) * t
+        for (k in keys) m[k] = SkeletalMath.lerpAngleDegrees(a.angles[k] ?: 0f, b.angles[k] ?: 0f, t)
         return Pose(m, a.bob * (1f - t) + b.bob * t, a.sway * (1f - t) + b.sway * t)
     }
 
