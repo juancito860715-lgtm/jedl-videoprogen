@@ -55,6 +55,7 @@ class DeveloperDiagnosticsTest {
         assertTrue(photo.isNull("width"))
         assertTrue(photo.isNull("zIndex"))
         assertTrue(face.isNull("width"))
+        assertTrue(face.isNull("faceCutterReturnedBitmap"))
         assertEquals(0, json.getJSONArray("sceneLayers").length())
     }
 }
