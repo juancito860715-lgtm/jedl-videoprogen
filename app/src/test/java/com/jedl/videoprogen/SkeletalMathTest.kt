@@ -1,9 +1,10 @@
 package com.jedl.videoprogen
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.sqrt
+import kotlin.math.hypot
 
 class SkeletalMathTest {
     @Test
@@ -29,9 +30,17 @@ class SkeletalMathTest {
             upperLength = 5f,
             lowerLength = 5f
         )
-        assertEquals(6f, sqrt(result.end.x * result.end.x + result.end.y * result.end.y), 0.0001f)
-        assertEquals(5f, sqrt(result.joint.x * result.joint.x + result.joint.y * result.joint.y), 0.0001f)
-        assertEquals(5f, sqrt((result.end.x - result.joint.x) * (result.end.x - result.joint.x) + (result.end.y - result.joint.y) * (result.end.y - result.joint.y)), 0.0001f)
+        assertEquals(6f, hypot(result.end.x.toDouble(), result.end.y.toDouble()).toFloat(), 0.0001f)
+        assertEquals(5f, hypot(result.joint.x.toDouble(), result.joint.y.toDouble()).toFloat(), 0.0001f)
+        assertEquals(
+            5f,
+            hypot(
+                (result.end.x - result.joint.x).toDouble(),
+                (result.end.y - result.joint.y).toDouble()
+            ).toFloat(),
+            0.0001f
+        )
+        assertTrue(result.reachedTarget)
     }
 
     @Test
@@ -42,17 +51,38 @@ class SkeletalMathTest {
             upperLength = 3f,
             lowerLength = 4f
         )
-        assertEquals(7f, hypot(result.end.x, result.end.y), 0.0001f)
+        assertEquals(7f, hypot(result.end.x.toDouble(), result.end.y.toDouble()).toFloat(), 0.0001f)
+        assertFalse(result.reachedTarget)
+    }
+
+    @Test
+    fun twoBoneIkClampsTargetInsideMinimumReach() {
+        val result = SkeletalMath.solveTwoBone(
+            root = Vec2(0f, 0f),
+            target = Vec2(0f, 0f),
+            upperLength = 5f,
+            lowerLength = 2f
+        )
+        assertEquals(3f, hypot(result.end.x.toDouble(), result.end.y.toDouble()).toFloat(), 0.001f)
+        assertFalse(result.reachedTarget)
     }
 
     @Test
     fun zeroLengthAndNonFiniteInputsAreRejected() {
-        var threw = false
+        var zeroLengthRejected = false
         try {
             SkeletalMath.solveTwoBone(Vec2(0f, 0f), Vec2(1f, 1f), 0f, 2f)
         } catch (_: IllegalArgumentException) {
-            threw = true
+            zeroLengthRejected = true
         }
-        assertTrue(threw)
+        assertTrue(zeroLengthRejected)
+
+        var nonFiniteRejected = false
+        try {
+            SkeletalMath.lerpAngleDegrees(Float.NaN, 10f, 0.5f)
+        } catch (_: IllegalArgumentException) {
+            nonFiniteRejected = true
+        }
+        assertTrue(nonFiniteRejected)
     }
 }
