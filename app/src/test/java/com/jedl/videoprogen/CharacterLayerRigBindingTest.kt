@@ -12,7 +12,7 @@ class CharacterLayerRigBindingTest {
             CharacterLayerContract.starterManifest(),
             CharacterLayerAppearance()
         )
-        assertEquals(35, layers.size)
+        assertEquals(39, layers.size)
         assertTrue(layers.all { it.boneId in rigNames })
     }
 
@@ -23,20 +23,34 @@ class CharacterLayerRigBindingTest {
         })
     }
 
+    private fun solveRigTips(angles: Map<String, Float>): Map<String, Vec2> {
+        val bones = PuppetRig.HUMANOID.bones
+        val nodes = bones.map { bone ->
+            SkeletalBoneNode(
+                name = bone.name,
+                parent = bone.parent,
+                attachX = bone.attachX,
+                attachY = bone.attachY,
+                restDegrees = bone.restDeg,
+                animationDegrees = angles[bone.name] ?: 0f
+            )
+        }
+        val world = SkeletalHierarchySolver.solve(nodes, 0f, 0f)
+        return bones.associate { bone ->
+            bone.name to world.getValue(bone.name).matrix.map(Vec2(0f, bone.length))
+        }
+    }
+
     @Test fun forearmFollowsUpperArmRotationThroughExistingHierarchy() {
-        val bind = PuppetRig.HUMANOID.solve(emptyMap(), 0f, 0f)
-        val animated = PuppetRig.HUMANOID.solve(mapOf("armUL" to 35f), 0f, 0f)
-        val bindTip = bind.getValue("foreArmL").tip
-        val animatedTip = animated.getValue("foreArmL").tip
-        assertNotEquals(bindTip.x, animatedTip.x, 0.0001f)
-        assertNotEquals(bindTip.y, animatedTip.y, 0.0001f)
+        val bind = solveRigTips(emptyMap()).getValue("foreArmL")
+        val animated = solveRigTips(mapOf("armUL" to 35f)).getValue("foreArmL")
+        assertNotEquals(bind.x, animated.x, 0.0001f)
+        assertNotEquals(bind.y, animated.y, 0.0001f)
     }
 
     @Test fun legPartsFollowHipAndKneeHierarchy() {
-        val bind = PuppetRig.HUMANOID.solve(emptyMap(), 0f, 0f)
-        val animated = PuppetRig.HUMANOID.solve(
-            mapOf("thighR" to 28f, "shinR" to -18f), 0f, 0f
-        )
-        assertNotEquals(bind.getValue("shinR").tip.x, animated.getValue("shinR").tip.x, 0.0001f)
+        val bind = solveRigTips(emptyMap()).getValue("shinR")
+        val animated = solveRigTips(mapOf("thighR" to 28f, "shinR" to -18f)).getValue("shinR")
+        assertNotEquals(bind.x, animated.x, 0.0001f)
     }
 }
