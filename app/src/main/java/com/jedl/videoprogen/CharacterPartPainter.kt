@@ -22,7 +22,7 @@ internal object CharacterPartPainter {
         "head_base", "ear_left", "ear_right", "eyes_pair", "eyes_closed",
         "brows_pair", "nose_small", "mouth_smile", "mouth_neutral", "mouth_open", "beard_short",
         "hair_back", "hair_front", "hair_short", "hair_afro", "hair_long",
-        "cap_back", "cap_front", "neck", "torso_base", "shirt_overlay", "pants_base",
+        "hat_back", "cap_back", "cap_front", "neck", "torso_base", "shirt_overlay", "pants_base",
         "upper_arm_l", "upper_arm_r", "sleeve_l", "sleeve_r",
         "forearm_l", "forearm_r", "hand_l", "hand_r",
         "thigh_l", "thigh_r", "shin_l", "shin_r", "foot_l", "foot_r",
@@ -98,7 +98,7 @@ internal object CharacterPartPainter {
                 }
                 fill(canvas,path,hair,OUTLINE,.025f)
             }
-            "cap_back" -> {
+            "hat_back", "cap_back" -> {
                 val path=Path().apply {
                     moveTo(.10f,.92f); quadTo(.05f,.05f,.50f,.02f)
                     quadTo(.95f,.05f,.90f,.92f); close()
