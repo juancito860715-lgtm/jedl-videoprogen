@@ -33,7 +33,10 @@ data class CharacterLayerDef(
     val pivotY: Float,
     val widthUnits: Float,
     val zIndex: Int,
-    val tintChannel: String? = null
+    val tintChannel: String? = null,
+    val heightUnits: Float = widthUnits,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f
 )
 
 data class CharacterLayerManifest(
@@ -68,16 +71,21 @@ object CharacterLayerContract {
         manifest.parts.forEach { part ->
             if (part.boneId !in supportedBones) errors += "Unknown bone for ${part.id}: ${part.boneId}"
             val normalizedPath = part.file.replace(92.toChar(), '/')
-            if (normalizedPath.isBlank() || normalizedPath.startsWith("/") ||
-                normalizedPath.split('/').any { it == ".." } ||
-                !normalizedPath.endsWith(".png", ignoreCase = true)
-            ) errors += "Unsafe or unsupported PNG path for ${part.id}"
+            val builtin = normalizedPath.startsWith("builtin://") &&
+                normalizedPath.removePrefix("builtin://").matches(Regex("[a-z0-9_]+"))
+            val safePng = normalizedPath.isNotBlank() && !normalizedPath.startsWith("/") &&
+                normalizedPath.split('/').none { it == ".." } &&
+                normalizedPath.endsWith(".png", ignoreCase = true)
+            if (!builtin && !safePng) errors += "Unsafe or unsupported artwork path for ${part.id}"
             if (!part.pivotX.isFinite() || part.pivotX !in 0f..1f ||
                 !part.pivotY.isFinite() || part.pivotY !in 0f..1f
             ) errors += "Pivot must be finite and normalized for ${part.id}"
             if (!part.widthUnits.isFinite() || part.widthUnits <= 0f) {
                 errors += "widthUnits must be positive and finite for ${part.id}"
             }
+            if (!part.heightUnits.isFinite() || part.heightUnits <= 0f ||
+                !part.offsetX.isFinite() || !part.offsetY.isFinite()
+            ) errors += "Invalid dimensions or offsets for ${part.id}"
             if (part.tintChannel != null && part.tintChannel.isBlank()) {
                 errors += "Tint channel must not be blank for ${part.id}"
             }
@@ -116,7 +124,10 @@ object CharacterLayerContract {
                 pivotY = item.getDouble("pivotY").toFloat(),
                 widthUnits = item.getDouble("widthUnits").toFloat(),
                 zIndex = item.getInt("zIndex"),
-                tintChannel = item.optString("tintChannel").takeIf { it.isNotBlank() && it != "null" }
+                tintChannel = item.optString("tintChannel").takeIf { it.isNotBlank() && it != "null" },
+                heightUnits = item.optDouble("heightUnits", item.getDouble("widthUnits")).toFloat(),
+                offsetX = item.optDouble("offsetX", 0.0).toFloat(),
+                offsetY = item.optDouble("offsetY", 0.0).toFloat()
             )
         }
         val defaultsJson = root.getJSONObject("defaults")
@@ -174,29 +185,44 @@ object CharacterLayerLibrary {
         val layers = CharacterLayerContract.resolve(current, appearance)
         if (layers.isEmpty() || layers.any { solved[it.boneId] == null }) return false
         val prepared = layers.map { layer ->
-            val bitmap = bitmapFor(ctx, layer.file) ?: return false
-            layer to bitmap
+            if (layer.file.startsWith("builtin://")) layer to null
+            else layer to (bitmapFor(ctx, layer.file) ?: return false)
         }
         for ((layer, bitmap) in prepared) {
             val pose = solved[layer.boneId] ?: return false
-            val width = layer.widthUnits
-            val height = width * bitmap.height.toFloat() / bitmap.width.toFloat()
             val save = canvas.save()
             canvas.concat(pose.matrix)
-            paint.colorFilter = appearance.colors[layer.tintChannel]?.let {
-                PorterDuffColorFilter(it, PorterDuff.Mode.SRC_IN)
+            if (layer.file.startsWith("builtin://")) {
+                canvas.translate(
+                    layer.offsetX - layer.pivotX * layer.widthUnits,
+                    layer.offsetY - layer.pivotY * layer.heightUnits
+                )
+                canvas.scale(layer.widthUnits, layer.heightUnits)
+                if (!CharacterPartPainter.draw(
+                    canvas, layer.file.removePrefix("builtin://"), appearance.colors
+                )) {
+                    canvas.restoreToCount(save)
+                    return false
+                }
+            } else {
+                val image = bitmap ?: run {
+                    canvas.restoreToCount(save)
+                    return false
+                }
+                canvas.translate(
+                    layer.offsetX - layer.pivotX * layer.widthUnits,
+                    layer.offsetY - layer.pivotY * layer.heightUnits
+                )
+                canvas.scale(
+                    layer.widthUnits / image.width.toFloat(),
+                    layer.heightUnits / image.height.toFloat()
+                )
+                paint.colorFilter = appearance.colors[layer.tintChannel]?.let {
+                    PorterDuffColorFilter(it, PorterDuff.Mode.SRC_IN)
+                }
+                canvas.drawBitmap(image, 0f, 0f, paint)
+                paint.colorFilter = null
             }
-            canvas.drawBitmap(
-                bitmap, null,
-                android.graphics.RectF(
-                    -layer.pivotX * width,
-                    -layer.pivotY * height,
-                    (1f - layer.pivotX) * width,
-                    (1f - layer.pivotY) * height
-                ),
-                paint
-            )
-            paint.colorFilter = null
             canvas.restoreToCount(save)
         }
         return true
