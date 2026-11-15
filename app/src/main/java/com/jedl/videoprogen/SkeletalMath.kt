@@ -26,6 +26,13 @@ data class Affine2D(
         m00 * point.x + m01 * point.y + m02,
         m10 * point.x + m11 * point.y + m12
     )
+
+    /** Android Matrix.setValues() expects row-major 3x3 values. */
+    fun toAndroidMatrixValues(): FloatArray = floatArrayOf(
+        m00, m01, m02,
+        m10, m11, m12,
+        0f, 0f, 1f
+    )
 }
 
 data class TwoBoneSolution(val joint: Vec2, val end: Vec2, val reachedTarget: Boolean)
@@ -121,5 +128,68 @@ object SkeletalMath {
 
     private fun requireFinite(vararg values: Float) {
         require(values.all { it.isFinite() }) { "Skeletal values must be finite" }
+    }
+}
+
+
+/** Declarative local transform for one node in a parent-first skeletal hierarchy. */
+data class SkeletalBoneNode(
+    val name: String,
+    val parent: String?,
+    val attachX: Float,
+    val attachY: Float,
+    val restDegrees: Float,
+    val animationDegrees: Float = 0f
+)
+
+/** Fully composed world transform for one skeletal node. */
+data class SkeletalBoneWorldPose(
+    val matrix: Affine2D,
+    val worldDegrees: Float
+)
+
+/**
+ * Resolves a parent-first bone list using column-vector affine composition:
+ * world = parentWorld * translate(attach) * rotate(rest + animation).
+ *
+ * Root translation is applied outside the root's local rotation, so rotating
+ * the root never rotates its position around the scene origin.
+ */
+object SkeletalHierarchySolver {
+    fun solve(
+        nodes: List<SkeletalBoneNode>,
+        rootX: Float,
+        rootY: Float
+    ): LinkedHashMap<String, SkeletalBoneWorldPose> {
+        require(rootX.isFinite() && rootY.isFinite()) { "Root position must be finite" }
+
+        val out = LinkedHashMap<String, SkeletalBoneWorldPose>()
+        val rootTransform = Affine2D(1f, 0f, rootX, 0f, 1f, rootY)
+
+        for (node in nodes) {
+            require(node.name.isNotBlank()) { "Bone name must not be blank" }
+            require(!out.containsKey(node.name)) { "Duplicate bone name: ${node.name}" }
+
+            val parentPose = node.parent?.let { parentName ->
+                out[parentName] ?: throw IllegalArgumentException(
+                    "Parent $parentName for ${node.name} must appear earlier in the bone list"
+                )
+            }
+            val local = SkeletalMath.matrix(
+                SkeletalTransform2D(
+                    x = node.attachX,
+                    y = node.attachY,
+                    rotationDegrees = node.restDegrees + node.animationDegrees
+                )
+            )
+            val parentMatrix = parentPose?.matrix ?: rootTransform
+            val world = SkeletalMath.multiply(parentMatrix, local)
+            val parentDegrees = parentPose?.worldDegrees ?: 0f
+            out[node.name] = SkeletalBoneWorldPose(
+                matrix = world,
+                worldDegrees = parentDegrees + node.restDegrees + node.animationDegrees
+            )
+        }
+        return out
     }
 }

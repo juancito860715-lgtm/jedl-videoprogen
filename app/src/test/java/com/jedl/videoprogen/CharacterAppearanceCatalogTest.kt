@@ -61,17 +61,17 @@ class CharacterAppearanceCatalogTest {
 
     @Test
     fun rejectsDefaultPartAssignedToTheWrongSlot() {
-        val catalog = validCatalog().copy(
-            defaults = validCatalog().defaults + (CharacterSlot.HAT to "eyes_brown")
-        )
+        val defaults = validCatalog().defaults.toMutableMap()
+        defaults[CharacterSlot.HAT] = "eyes_brown"
+        val catalog = validCatalog().copy(defaults = defaults)
         val result = CharacterCatalogValidator.validate(catalog)
         assertFalse(result.isValid)
-        assertTrue(result.errors.any { it.contains("slot", ignoreCase = true) })
+        assertTrue(result.errors.any { it.contains("belongs to", ignoreCase = true) })
     }
 
     @Test
     fun appearanceCanSelectOnePartPerSlotAndIndependentColorChannels() {
-        val appearance = CharacterAppearanceDocument(
+        val appearance = CatalogAppearanceSelectionDocument(
             catalogId = "jedl_master_v1",
             selectedParts = mapOf(
                 CharacterSlot.SKIN to "skin_medium",
@@ -94,7 +94,7 @@ class CharacterAppearanceCatalogTest {
 
     @Test
     fun rejectsAppearancePartNotPresentInCatalog() {
-        val appearance = CharacterAppearanceDocument(
+        val appearance = CatalogAppearanceSelectionDocument(
             catalogId = "jedl_master_v1",
             selectedParts = mapOf(CharacterSlot.HAT to "hat_that_does_not_exist"),
             colors = emptyMap()
