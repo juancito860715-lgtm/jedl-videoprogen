@@ -79,13 +79,7 @@ class Skeleton(val bones: List<Bone>) {
         for (bone in bones) {
             val world = worldPoses.getValue(bone.name)
             val matrix = Matrix().apply {
-                setValues(
-                    floatArrayOf(
-                        world.matrix.m00, world.matrix.m01, world.matrix.m02,
-                        world.matrix.m10, world.matrix.m11, world.matrix.m12,
-                        0f, 0f, 1f
-                    )
-                )
+                setValues(world.matrix.toAndroidMatrixValues())
             }
             val joint = world.matrix.map(Vec2(0f, 0f))
             val tip = world.matrix.map(Vec2(0f, bone.length))
