@@ -79,7 +79,6 @@ class CharacterLayerContractTest {
 
     @Test fun builtInStarterPackCoversTheHumanoidRig() {
         val manifest = CharacterLayerContract.starterManifest()
-        assertTrue(CharacterLayerContract.validate(manifest).errors.joinToString()).also { }
         assertTrue(CharacterLayerContract.validate(manifest).isValid)
         val resolved = CharacterLayerContract.resolve(manifest, CharacterLayerAppearance())
         assertTrue(resolved.size >= 30)
@@ -97,7 +96,8 @@ class CharacterLayerContractTest {
         val alternate = manifest.copy(
             parts = manifest.parts + CharacterLayerDef(
                 "cap_alt", CharacterLayerSlot.HAT_FRONT, "head", "builtin://cap_front",
-                0.5f, 0f, 0.20f, 0.105f, null
+                pivotX = 0.5f, pivotY = 0f, widthUnits = 0.20f,
+                zIndex = 65, heightUnits = 0.105f
             )
         )
         val resolved = CharacterLayerContract.resolve(
