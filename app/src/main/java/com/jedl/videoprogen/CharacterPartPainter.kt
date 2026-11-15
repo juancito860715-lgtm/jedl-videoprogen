@@ -20,7 +20,7 @@ internal object CharacterPartPainter {
 
     val supportedPartIds: Set<String> = setOf(
         "head_base", "ear_left", "ear_right", "eyes_pair", "eyes_closed",
-        "brows_pair", "nose_small", "mouth_smile", "mouth_neutral", "mouth_open",
+        "brows_pair", "nose_small", "mouth_smile", "mouth_neutral", "mouth_open", "beard_short",
         "hair_back", "hair_front", "hair_short", "hair_afro", "hair_long",
         "cap_back", "cap_front", "neck", "torso_base", "shirt_overlay", "pants_base",
         "upper_arm_l", "upper_arm_r", "sleeve_l", "sleeve_r",
@@ -61,6 +61,13 @@ internal object CharacterPartPainter {
             }
             "mouth_neutral" -> line(canvas,.36f,.78f,.65f,.78f,0xFF873E43.toInt(),.03f)
             "mouth_open" -> oval(canvas,.39f,.69f,.62f,.92f,0xFF71343A.toInt(),0xFF4D282B.toInt(),.02f)
+            "beard_short" -> {
+                val path=Path().apply {
+                    moveTo(.18f,.64f); quadTo(.50f,.96f,.82f,.64f)
+                    lineTo(.72f,.91f); quadTo(.50f,1.02f,.28f,.91f); close()
+                }
+                fill(canvas,path,hair,OUTLINE,.025f)
+            }
             "hair_back" -> oval(canvas,.02f,.00f,.98f,.55f,hair,OUTLINE,.025f)
             "hair_short" -> {
                 val path=Path().apply {
