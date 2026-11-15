@@ -24,11 +24,9 @@ import kotlin.math.sin
 // 2. MOCAP: el clonador de video produce una MotionTemplate con
 //    las poses detectadas por MediaPipe (Etapa C, lo que hacen
 //    Modif/Plask/ToonDance pero 100% OFFLINE).
-// 3. IK (cinemática inversa): arrastrar la mano o el pie y que
-//    codo/hombro (o rodilla/cadera) se ajusten solos. Técnica
-//    FABRIK (algoritmo público, tutorial oficial Khronos/Vulkan
-//    y SkeletonModification2DFABRIK de Godot), el sello de
-//    Chroma Toons.
+// 3. IK (cinemática inversa): arrastrar la mano o el pie y resolver
+//    codo/rodilla con geometría analítica de dos huesos, límites
+//    articulares y selección estable del lado de flexión.
 //
 // NOVEDADES v0.6.0 (FASE B): 5 PLANTILLAS NUEVAS (percusión,
 // correr, saltar, bailar, celebrar — 8 en total) y las
@@ -380,97 +378,72 @@ object PuppetEngine {
         return Pose(m, a.bob * (1f - t) + b.bob * t, a.sway * (1f - t) + b.sway * t)
     }
 
-    // ---------- IK: FABRIK DE 2 HUESOS (v0.5.0) ----------
-    // El usuario arrastra la MANO (o el PIE); el codo (o la rodilla) se
-    // acomoda solo. Algoritmo FABRIK (algoritmo público; referencia:
-    // tutorial oficial Khronos/Vulkan y SkeletonModification2DFABRIK de
-    // Godot): pasadas hacia adelante y atrás sobre las posiciones de los
-    // huesos hasta que la punta alcance el objetivo.
-    //
-    // upperName/foreName: cadena de 2 huesos (p.ej. "armUR"+"foreArmR").
-    // angles: pose actual completa. targetX/targetY: objetivo en
-    // unidades del muñeco (coordenadas de pantalla: y crece hacia abajo).
-    // Devuelve la pose con SOLO los 2 ángulos de la cadena actualizados.
+    // ---------- IK ANALÍTICA DE DOS HUESOS (F2.4-B) ----------
+    // El editor de poses ya llama a esta entrada para manos y pies.
+    // Se conserva la API pública; cambia el núcleo FABRIK por el solver
+    // analítico y comprobable de SkeletalMath.
     fun solveTwoBoneIk(
         upperName: String, foreName: String,
         angles: Map<String, Float>,
         targetX: Float, targetY: Float
     ): Pose {
-        val upper = PuppetRig.HUMANOID.bones.firstOrNull { it.name == upperName } ?: return Pose(angles, 0f, 0f)
-        val fore = PuppetRig.HUMANOID.bones.firstOrNull { it.name == foreName } ?: return Pose(angles, 0f, 0f)
-        val bob = 0f
-        val sway = 0f
-        // 1) resolver la pose ACTUAL para obtener posiciones de los huesos
+        val upper = PuppetRig.HUMANOID.bones.firstOrNull { it.name == upperName }
+            ?: return Pose(angles, 0f, 0f)
+        val fore = PuppetRig.HUMANOID.bones.firstOrNull { it.name == foreName }
+            ?: return Pose(angles, 0f, 0f)
+        if (fore.parent != upper.name || !targetX.isFinite() || !targetY.isFinite()) {
+            return Pose(angles, 0f, 0f)
+        }
+
         val solved = PuppetRig.HUMANOID.solve(angles, 0f, 0f)
-        val up = solved[upperName] ?: return Pose(angles, bob, sway)
-        val fo = solved[foreName] ?: return Pose(angles, bob, sway)
-        var p0 = PointF(up.joint.x, up.joint.y)          // hombro / cadera
-        var p1 = PointF(fo.joint.x, fo.joint.y)          // codo / rodilla
-        var p2 = PointF(fo.tip.x, fo.tip.y)              // mano / pie
-        val l1 = upper.length
-        val l2 = fore.length
+        val upperPose = solved[upperName] ?: return Pose(angles, 0f, 0f)
+        val lowerPose = solved[foreName] ?: return Pose(angles, 0f, 0f)
+        val parentWorld = upper.parent?.let { solved[it]?.worldDeg } ?: 0f
+        val upperRange = jointRange(upperName)
+        val lowerRange = jointRange(foreName)
 
-        // 2) objetivo alcanzable: limitar al radio máximo de la cadena
-        val dx0 = targetX - p0.x
-        val dy0 = targetY - p0.y
-        val d0 = kotlin.math.sqrt(dx0 * dx0 + dy0 * dy0)
-        var tx = targetX
-        var ty = targetY
-        val maxReach = (l1 + l2) * 0.999f
-        if (d0 > maxReach) {
-            tx = p0.x + dx0 / d0 * maxReach
-            ty = p0.y + dy0 / d0 * maxReach
-        }
+        // Si la pose está completamente recta, el centro del rango permitido
+        // define el lado inicial: foreArmL/shin = negativo; foreArmR = positivo.
+        val lowerRangeCenter = (lowerRange.first + lowerRange.second) * 0.5f
+        val defaultBendDirection = if (lowerRangeCenter < 0f) -1f else 1f
 
-        // 3) FABRIK: 10 iteraciones (adelante y atrás)
-        for (iter in 0 until 10) {
-            // BACKWARD: la punta va al objetivo, el codo la sigue
-            p2 = PointF(tx, ty)
-            var dx = p1.x - p2.x
-            var dy = p1.y - p2.y
-            var len = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (len > 1e-6f) { p1 = PointF(p2.x + dx / len * l2, p2.y + dy / len * l2) }
-            // FORWARD: la raíz queda fija, el codo se recoloca
-            dx = p1.x - p0.x
-            dy = p1.y - p0.y
-            len = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (len > 1e-6f) { p1 = PointF(p0.x + dx / len * l1, p0.y + dy / len * l1) }
-            dx = p2.x - p1.x
-            dy = p2.y - p1.y
-            len = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (len > 1e-6f) { p2 = PointF(p1.x + dx / len * l2, p1.y + dy / len * l2) }
-        }
+        val result = SkeletalMath.solveTwoBoneAngles(
+            root = Vec2(upperPose.joint.x, upperPose.joint.y),
+            target = Vec2(targetX, targetY),
+            upperLength = upper.length,
+            lowerLength = fore.length,
+            currentJoint = Vec2(lowerPose.joint.x, lowerPose.joint.y),
+            currentEnd = Vec2(lowerPose.tip.x, lowerPose.tip.y),
+            parentWorldDegrees = parentWorld,
+            upperRestDegrees = upper.restDeg,
+            lowerRestDegrees = fore.restDeg,
+            upperMinDegrees = upperRange.first,
+            upperMaxDegrees = upperRange.second,
+            lowerMinDegrees = lowerRange.first,
+            lowerMaxDegrees = lowerRange.second,
+            defaultBendDirection = defaultBendDirection
+        )
 
-        // 4) posiciones finales -> ángulos del rig (convención: 0=abajo,
-        //    180=arriba, positivo horario = atan2(dx, dy))
-        val angUpper = angDeg(p0, p1)      // mundo del hueso superior
-        val angFore = angDeg(p1, p2)       // mundo del antebrazo/espinilla
-        // ángulo de ANIMACIÓN = mundo − mundo del padre − reposo
-        val parentPose = upper.parent?.let { solved[it] }
-        val parentWorld = parentPose?.worldDeg ?: 0f
-        // v0.5.1 (FASE A): LÍMITES ARTICULARES — el codo dobla solo hacia el
-        // cuerpo y la rodilla solo hacia atrás (sentidos VERIFICADOS en las
-        // plantillas walk/wave del propio rig: foreArmR=+20..58 en wave,
-        // shin=-32 en walk). Sin esto el IK doblaba codos/rodillas hacia
-        // delante: poses imposibles = la "desfiguración" del editor de poses.
-        val animUpper = clampJoint(upperName, wrapDeg(angUpper - parentWorld - upper.restDeg))
-        val animFore = clampJoint(foreName, wrapDeg(angFore - angUpper - fore.restDeg))
-
-        val m = LinkedHashMap<String, Float>(angles)
-        m[upperName] = animUpper
-        m[foreName] = animFore
-        return Pose(m, bob, sway)
+        val updated = LinkedHashMap<String, Float>(angles)
+        updated[upperName] = result.upperAngleDegrees
+        updated[foreName] = result.lowerAngleDegrees
+        return Pose(updated, 0f, 0f)
     }
 
     // Rango fisiológico por hueso (grados de animación). El resto sin límite.
-    private fun clampJoint(bone: String, a: Float): Float {
+    private fun jointRange(bone: String): Pair<Float, Float> {
         return when (bone) {
-            "foreArmL" -> a.coerceIn(-150f, 5f)
-            "foreArmR" -> a.coerceIn(-5f, 150f)
-            "shinL", "shinR" -> a.coerceIn(-140f, 5f)
-            "thighL", "thighR" -> a.coerceIn(-60f, 60f)
-            else -> a
+            "foreArmL" -> Pair(-150f, 5f)
+            "foreArmR" -> Pair(-5f, 150f)
+            "shinL", "shinR" -> Pair(-140f, 5f)
+            "thighL", "thighR" -> Pair(-60f, 60f)
+            else -> Pair(-180f, 180f)
         }
+    }
+
+    private fun clampJoint(bone: String, a: Float): Float {
+        val range = jointRange(bone)
+        return a.coerceIn(range.first, range.second)
     }
 
     // v0.5.1 (FASE A): gira UN hueso (codo o rodilla en el editor de puntos)
