@@ -26,6 +26,13 @@ data class Affine2D(
         m00 * point.x + m01 * point.y + m02,
         m10 * point.x + m11 * point.y + m12
     )
+
+    /** Android Matrix.setValues() expects row-major 3x3 values. */
+    fun toAndroidMatrixValues(): FloatArray = floatArrayOf(
+        m00, m01, m02,
+        m10, m11, m12,
+        0f, 0f, 1f
+    )
 }
 
 data class TwoBoneSolution(val joint: Vec2, val end: Vec2, val reachedTarget: Boolean)
