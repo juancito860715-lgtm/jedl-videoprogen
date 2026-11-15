@@ -97,15 +97,7 @@ object AvatarRenderer {
     }
 
     private fun appearanceFor(spec: AvatarSpec): CharacterLayerAppearance =
-        CharacterLayerAppearance(
-            colors = mapOf(
-                "skin" to spec.skin,
-                "hair" to spec.hair,
-                "shirt" to spec.shirt,
-                "pants" to spec.pants,
-                "shoes" to spec.shoes
-            )
-        )
+        CharacterLayerAppearance.fromAvatarSpec(spec)
 
     private inline fun bone(
         canvas: Canvas, solved: Map<String, BonePose>,
