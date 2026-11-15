@@ -30,6 +30,17 @@ data class Affine2D(
 
 data class TwoBoneSolution(val joint: Vec2, val end: Vec2, val reachedTarget: Boolean)
 
+/** Local joint angles and the actual endpoint after applying joint limits. */
+data class TwoBoneRigSolution(
+    val upperAngleDegrees: Float,
+    val lowerAngleDegrees: Float,
+    val joint: Vec2,
+    val end: Vec2,
+    val reachedTarget: Boolean,
+    val bendDirection: Float,
+    val targetError: Float
+)
+
 /**
  * Deterministic, allocation-light skeletal math shared by rig tests and runtime.
  * All distances are expressed in the character's normalized rig units.
@@ -109,6 +120,105 @@ object SkeletalMath {
         )
         val end = Vec2(root.x + ux * distance, root.y + uy * distance)
         return TwoBoneSolution(joint, end, rawDistance <= maxReach && rawDistance >= minReach)
+    }
+
+    /**
+     * Converts an analytic two-bone solution into local rig angles.
+     *
+     * The solver tests both elbow/knee sides, keeps the side of the current pose
+     * when possible, applies both joint limits, then chooses the candidate whose
+     * resulting endpoint is closest to the requested target.
+     *
+     * Angles use the rig convention: 0° points down, 90° right, 180° up.
+     */
+    fun solveTwoBoneAngles(
+        root: Vec2,
+        target: Vec2,
+        upperLength: Float,
+        lowerLength: Float,
+        currentJoint: Vec2,
+        currentEnd: Vec2,
+        parentWorldDegrees: Float,
+        upperRestDegrees: Float,
+        lowerRestDegrees: Float,
+        upperMinDegrees: Float,
+        upperMaxDegrees: Float,
+        lowerMinDegrees: Float,
+        lowerMaxDegrees: Float,
+        defaultBendDirection: Float
+    ): TwoBoneRigSolution {
+        requireFinite(
+            root.x, root.y, target.x, target.y,
+            upperLength, lowerLength,
+            currentJoint.x, currentJoint.y, currentEnd.x, currentEnd.y,
+            parentWorldDegrees, upperRestDegrees, lowerRestDegrees,
+            upperMinDegrees, upperMaxDegrees, lowerMinDegrees, lowerMaxDegrees,
+            defaultBendDirection
+        )
+        require(upperMinDegrees <= upperMaxDegrees) { "Invalid upper joint limits" }
+        require(lowerMinDegrees <= lowerMaxDegrees) { "Invalid lower joint limits" }
+        require(defaultBendDirection != 0f) { "defaultBendDirection must be non-zero" }
+
+        val currentDx = currentEnd.x - root.x
+        val currentDy = currentEnd.y - root.y
+        val currentJointDx = currentJoint.x - root.x
+        val currentJointDy = currentJoint.y - root.y
+        val currentSide = currentDx * currentJointDy - currentDy * currentJointDx
+        val preferredDirection = when {
+            kotlin.math.abs(currentSide) > EPSILON -> if (currentSide > 0f) 1f else -1f
+            defaultBendDirection > 0f -> 1f
+            else -> -1f
+        }
+
+        fun candidate(direction: Float): TwoBoneRigSolution {
+            val geometry = solveTwoBone(root, target, upperLength, lowerLength, direction)
+            val desiredUpperWorld = angleDegrees(root, geometry.joint)
+            val desiredLowerWorld = angleDegrees(geometry.joint, geometry.end)
+
+            val upperLocal = wrapDegrees(
+                desiredUpperWorld - parentWorldDegrees - upperRestDegrees
+            ).coerceIn(upperMinDegrees, upperMaxDegrees)
+            val actualUpperWorld = wrapDegrees(parentWorldDegrees + upperRestDegrees + upperLocal)
+            val actualJoint = offset(root, actualUpperWorld, upperLength)
+
+            val lowerLocal = wrapDegrees(
+                desiredLowerWorld - actualUpperWorld - lowerRestDegrees
+            ).coerceIn(lowerMinDegrees, lowerMaxDegrees)
+            val actualLowerWorld = wrapDegrees(actualUpperWorld + lowerRestDegrees + lowerLocal)
+            val actualEnd = offset(actualJoint, actualLowerWorld, lowerLength)
+
+            val errorX = actualEnd.x - target.x
+            val errorY = actualEnd.y - target.y
+            val error = sqrt(errorX * errorX + errorY * errorY)
+            val tolerance = maxOf(1e-4f, (upperLength + lowerLength) * 1e-3f)
+            return TwoBoneRigSolution(
+                upperAngleDegrees = upperLocal,
+                lowerAngleDegrees = lowerLocal,
+                joint = actualJoint,
+                end = actualEnd,
+                reachedTarget = geometry.reachedTarget && error <= tolerance,
+                bendDirection = direction,
+                targetError = error
+            )
+        }
+
+        val preferred = candidate(preferredDirection)
+        val alternate = candidate(-preferredDirection)
+        return if (alternate.targetError + EPSILON < preferred.targetError) alternate else preferred
+    }
+
+    private fun angleDegrees(from: Vec2, to: Vec2): Float =
+        Math.toDegrees(kotlin.math.atan2(
+            (to.x - from.x).toDouble(),
+            (to.y - from.y).toDouble()
+        )).toFloat()
+
+    private fun offset(origin: Vec2, angleDegrees: Float, length: Float): Vec2 {
+        val radians = angleDegrees * (PI.toFloat() / 180f)
+        return Vec2(
+            origin.x + sin(radians) * length,
+            origin.y + cos(radians) * length
+        )
     }
 
     fun wrapDegrees(value: Float): Float {
