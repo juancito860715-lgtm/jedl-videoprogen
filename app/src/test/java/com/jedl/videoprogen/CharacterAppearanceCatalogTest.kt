@@ -61,12 +61,12 @@ class CharacterAppearanceCatalogTest {
 
     @Test
     fun rejectsDefaultPartAssignedToTheWrongSlot() {
-        val catalog = validCatalog().copy(
-            defaults = validCatalog().defaults + (CharacterSlot.HAT to "eyes_brown")
-        )
+        val defaults = validCatalog().defaults.toMutableMap()
+        defaults[CharacterSlot.HAT] = "eyes_brown"
+        val catalog = validCatalog().copy(defaults = defaults)
         val result = CharacterCatalogValidator.validate(catalog)
         assertFalse(result.isValid)
-        assertTrue(result.errors.any { it.contains("slot", ignoreCase = true) })
+        assertTrue(result.errors.any { it.contains("belongs to", ignoreCase = true) })
     }
 
     @Test
