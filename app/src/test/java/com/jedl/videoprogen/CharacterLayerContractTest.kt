@@ -127,4 +127,20 @@ class CharacterLayerContractTest {
         assertTrue(CharacterLayerContract.validate(parsed!!).isValid)
         assertEquals("head", parsed.defaults[CharacterLayerSlot.HEAD])
     }
+    @Test fun avatarHairAndBeardSettingsSelectIndependentLayers() {
+        val base = Avatars.presets().first()
+        val cap = CharacterLayerAppearance.fromAvatarSpec(base.copy(hairStyle = 2, beard = false))
+        assertEquals("cap_front", cap.selectedParts[CharacterLayerSlot.HAT_FRONT])
+        assertEquals("", cap.selectedParts[CharacterLayerSlot.HAIR_FRONT])
+        assertEquals("", cap.selectedParts[CharacterLayerSlot.FACIAL_HAIR])
+
+        val afro = CharacterLayerAppearance.fromAvatarSpec(base.copy(hairStyle = 1, beard = true))
+        assertEquals("hair_afro", afro.selectedParts[CharacterLayerSlot.HAIR_FRONT])
+        assertEquals("beard_short", afro.selectedParts[CharacterLayerSlot.FACIAL_HAIR])
+        assertEquals("", afro.selectedParts[CharacterLayerSlot.HAT_FRONT])
+
+        val bald = CharacterLayerAppearance.fromAvatarSpec(base.copy(hairStyle = 3))
+        assertEquals("", bald.selectedParts[CharacterLayerSlot.HAIR_FRONT])
+    }
+
 }
