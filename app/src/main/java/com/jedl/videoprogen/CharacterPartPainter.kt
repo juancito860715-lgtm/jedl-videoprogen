@@ -18,6 +18,18 @@ internal object CharacterPartPainter {
     private const val PANTS_DEFAULT = 0xFF9E3736.toInt()
     private const val SHOE_DEFAULT = 0xFFE7E2D8.toInt()
 
+    val supportedPartIds: Set<String> = setOf(
+        "head_base", "ear_left", "ear_right", "eyes_pair", "eyes_closed",
+        "brows_pair", "nose_small", "mouth_smile", "mouth_neutral", "mouth_open",
+        "hair_back", "hair_front", "hair_short", "hair_afro", "hair_long",
+        "cap_back", "cap_front", "neck", "torso_base", "shirt_overlay", "pants_base",
+        "upper_arm_l", "upper_arm_r", "sleeve_l", "sleeve_r",
+        "forearm_l", "forearm_r", "hand_l", "hand_r",
+        "thigh_l", "thigh_r", "shin_l", "shin_r", "foot_l", "foot_r",
+        "shoe_l", "shoe_r", "glasses", "chain", "medal", "watch",
+        "stick_l", "stick_r", "drum_shell", "drum_head", "drum_stand"
+    )
+
     fun draw(canvas: Canvas, id: String, colors: Map<String, Int>): Boolean {
         val skin = colors["skin"] ?: SKIN_DEFAULT
         val hair = colors["hair"] ?: HAIR_DEFAULT
@@ -28,6 +40,10 @@ internal object CharacterPartPainter {
             "head_base" -> oval(canvas, .05f,.02f,.95f,.99f,skin,OUTLINE,.035f)
             "ear_left" -> oval(canvas,-.08f,.43f,.20f,.70f,skin,OUTLINE,.025f)
             "ear_right" -> oval(canvas,.80f,.43f,1.08f,.70f,skin,OUTLINE,.025f)
+            "eyes_closed" -> {
+                line(canvas,.20f,.48f,.42f,.48f,0xFF332522.toInt(),.035f)
+                line(canvas,.58f,.48f,.80f,.48f,0xFF332522.toInt(),.035f)
+            }
             "eyes_pair" -> {
                 oval(canvas,.23f,.40f,.40f,.53f,0xFFFFFFFF.toInt(),OUTLINE,.018f)
                 oval(canvas,.60f,.40f,.77f,.53f,0xFFFFFFFF.toInt(),OUTLINE,.018f)
@@ -43,7 +59,29 @@ internal object CharacterPartPainter {
                 val path=Path().apply { moveTo(.37f,.76f); quadTo(.50f,.86f,.64f,.75f) }
                 stroke(canvas,path,0xFF873E43.toInt(),.035f)
             }
+            "mouth_neutral" -> line(canvas,.36f,.78f,.65f,.78f,0xFF873E43.toInt(),.03f)
+            "mouth_open" -> oval(canvas,.39f,.69f,.62f,.92f,0xFF71343A.toInt(),0xFF4D282B.toInt(),.02f)
             "hair_back" -> oval(canvas,.02f,.00f,.98f,.55f,hair,OUTLINE,.025f)
+            "hair_short" -> {
+                val path=Path().apply {
+                    moveTo(.08f,.70f); quadTo(.08f,.04f,.50f,.08f)
+                    quadTo(.94f,.04f,.92f,.70f); lineTo(.78f,.50f)
+                    quadTo(.50f,.60f,.22f,.50f); close()
+                }
+                fill(canvas,path,hair,OUTLINE,.025f)
+            }
+            "hair_afro" -> {
+                oval(canvas,.02f,.08f,.98f,.90f,hair,OUTLINE,.025f)
+                oval(canvas,.12f,.42f,.88f,1.05f,hair,OUTLINE,.02f)
+            }
+            "hair_long" -> {
+                val path=Path().apply {
+                    moveTo(.08f,.70f); quadTo(.02f,.02f,.50f,.05f)
+                    quadTo(.98f,.02f,.92f,.70f); lineTo(.86f,1.0f)
+                    lineTo(.70f,.82f); lineTo(.30f,.82f); lineTo(.14f,1.0f); close()
+                }
+                fill(canvas,path,hair,OUTLINE,.025f)
+            }
             "hair_front" -> {
                 val path=Path().apply {
                     moveTo(.08f,.38f); cubicTo(.04f,.10f,.28f,.02f,.48f,.12f)
@@ -52,6 +90,13 @@ internal object CharacterPartPainter {
                     cubicTo(.39f,.35f,.25f,.27f,.08f,.38f); close()
                 }
                 fill(canvas,path,hair,OUTLINE,.025f)
+            }
+            "cap_back" -> {
+                val path=Path().apply {
+                    moveTo(.10f,.92f); quadTo(.05f,.05f,.50f,.02f)
+                    quadTo(.95f,.05f,.90f,.92f); close()
+                }
+                fill(canvas,path,shirt,OUTLINE,.025f)
             }
             "cap_front" -> {
                 val path=Path().apply {
@@ -93,6 +138,7 @@ internal object CharacterPartPainter {
             }
             "thigh", "thigh_l", "thigh_r" -> capsule(canvas,.18f,.00f,.82f,1.00f,.34f,pants)
             "shin", "shin_l", "shin_r" -> capsule(canvas,.23f,.00f,.77f,.86f,.27f,pants)
+            "foot_l", "foot_r" -> oval(canvas,.08f,.25f,.92f,.90f,skin,OUTLINE,.025f)
             "shoe", "shoe_l", "shoe_r" -> {
                 val path=Path().apply {
                     moveTo(.15f,.52f); quadTo(.45f,.45f,.58f,.60f)
@@ -125,6 +171,7 @@ internal object CharacterPartPainter {
                 line(canvas,.08f,.80f,.92f,.80f,0xFFD8C8A0.toInt(),.035f)
             }
             "drum_head" -> oval(canvas,.02f,.02f,.98f,.30f,0xFFE8E2D4.toInt(),0xFF6D6A64.toInt(),.035f)
+            "drum_head" -> oval(canvas,.02f,.02f,.98f,.98f,0xFFE8E2D4.toInt(),0xFF6D6A64.toInt(),.035f)
             "drum_stand" -> {
                 line(canvas,.50f,.05f,.50f,.72f,0xFF777D84.toInt(),.055f)
                 line(canvas,.50f,.65f,.12f,.98f,0xFF777D84.toInt(),.045f)
