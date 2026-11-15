@@ -154,7 +154,7 @@ object CharacterLayerContract {
             part("mouth_neutral", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
             part("mouth_open", CharacterLayerSlot.MOUTH, "head", .075f, .065f, 53, .5f, .5f, 0f, .12f),
             part("hair_front", CharacterLayerSlot.HAIR_FRONT, "head", .18f, .10f, 60, .5f, 0f, 0f, 0f, "hair"),
-            part("cap_front", CharacterLayerSlot.HAT_FRONT, "head", .20f, .105f, 65, .5f, 0f, 0f, -.012f, "shirt"),
+            part("cap_front", CharacterLayerSlot.HAT_FRONT, "head", .20f, .105f, 65, .5f, 0f, 0f, .12f, "shirt"),
             part("glasses", CharacterLayerSlot.GLASSES, "head", .15f, .075f, 70, .5f, .5f, 0f, .065f),
             part("chain", CharacterLayerSlot.CHAIN, "torso", .13f, .18f, 72, .5f, 0f, 0f, .10f),
             part("medal", CharacterLayerSlot.MEDAL, "torso", .07f, .08f, 73, .5f, .5f, 0f, .23f),
