@@ -41,7 +41,7 @@ data class CharacterCatalog(
     val defaults: Map<CharacterSlot, String>
 )
 
-data class CharacterAppearanceDocument(
+data class CatalogAppearanceSelectionDocument(
     val catalogId: String,
     val selectedParts: Map<CharacterSlot, String>,
     /** ARGB values keyed by semantic region, not by whole image. */
@@ -100,7 +100,7 @@ object CharacterCatalogValidator {
 
 object CharacterAppearanceValidator {
     fun validate(
-        appearance: CharacterAppearanceDocument,
+        appearance: CatalogAppearanceSelectionDocument,
         catalog: CharacterCatalog
     ): List<String> {
         val errors = mutableListOf<String>()
