@@ -110,6 +110,55 @@ object CharacterLayerContract {
         }.sortedBy { it.zIndex }
     }
 
+    fun starterManifest(): CharacterLayerManifest {
+        fun part(
+            id: String, slot: CharacterLayerSlot, bone: String, w: Float, h: Float,
+            z: Int, px: Float = .5f, py: Float = 0f,
+            ox: Float = 0f, oy: Float = 0f, tint: String? = null
+        ) = CharacterLayerDef(
+            id, slot, bone, "builtin://$id", px, py, w, z, tint, h, ox, oy
+        )
+        val parts = listOf(
+            part("hair_back", CharacterLayerSlot.HAIR_BACK, "head", .18f, .20f, 5),
+            part("ear_left", CharacterLayerSlot.EAR_L, "head", .055f, .065f, 12, .5f, .5f, -.073f, .105f, "skin"),
+            part("ear_right", CharacterLayerSlot.EAR_R, "head", .055f, .065f, 12, .5f, .5f, .073f, .105f, "skin"),
+            part("neck", CharacterLayerSlot.NECK, "head", .065f, .055f, 15, .5f, 1f, 0f, 0f, "skin"),
+            part("torso_base", CharacterLayerSlot.TORSO, "torso", .245f, .31f, 20, .5f, 0f, 0f, 0f, "shirt"),
+            part("pants_base", CharacterLayerSlot.PANTS, "torso", .205f, .15f, 21, .5f, 1f, 0f, 0f, "pants"),
+            part("upper_arm_l", CharacterLayerSlot.UPPER_ARM_L, "armUL", .075f, .15f, 25, .5f, 0f, 0f, 0f, "skin"),
+            part("upper_arm_r", CharacterLayerSlot.UPPER_ARM_R, "armUR", .075f, .15f, 25, .5f, 0f, 0f, 0f, "skin"),
+            part("sleeve_l", CharacterLayerSlot.SLEEVE_L, "armUL", .095f, .075f, 26, .5f, 0f, 0f, 0f, "shirt"),
+            part("sleeve_r", CharacterLayerSlot.SLEEVE_R, "armUR", .095f, .075f, 26, .5f, 0f, 0f, 0f, "shirt"),
+            part("forearm_l", CharacterLayerSlot.FOREARM_L, "foreArmL", .068f, .14f, 28, .5f, 0f, 0f, 0f, "skin"),
+            part("forearm_r", CharacterLayerSlot.FOREARM_R, "foreArmR", .068f, .14f, 28, .5f, 0f, 0f, 0f, "skin"),
+            part("thigh_l", CharacterLayerSlot.THIGH_L, "thighL", .085f, .19f, 29, .5f, 0f, 0f, 0f, "pants"),
+            part("thigh_r", CharacterLayerSlot.THIGH_R, "thighR", .085f, .19f, 29, .5f, 0f, 0f, "pants"),
+            part("shin_l", CharacterLayerSlot.SHIN_L, "shinL", .072f, .18f, 30, .5f, 0f, 0f, 0f, "pants"),
+            part("shin_r", CharacterLayerSlot.SHIN_R, "shinR", .072f, .18f, 30, .5f, 0f, 0f, "pants"),
+            part("shoe_l", CharacterLayerSlot.SHOE_L, "shinL", .105f, .065f, 34, .5f, 0f, 0f, .145f, "shoes"),
+            part("shoe_r", CharacterLayerSlot.SHOE_R, "shinR", .105f, .065f, 34, .5f, 0f, 0f, .145f, "shoes"),
+            part("hand_l", CharacterLayerSlot.HAND_L, "foreArmL", .060f, .075f, 35, .5f, 0f, 0f, .105f, "skin"),
+            part("hand_r", CharacterLayerSlot.HAND_R, "foreArmR", .060f, .075f, 35, .5f, 0f, 0f, .105f, "skin"),
+            part("head_base", CharacterLayerSlot.HEAD, "head", .18f, .20f, 40, .5f, 0f, 0f, 0f, "skin"),
+            part("eyes_pair", CharacterLayerSlot.EYES, "head", .13f, .10f, 50, .5f, .5f, 0f, .065f),
+            part("brows_pair", CharacterLayerSlot.EYEBROWS, "head", .13f, .08f, 51, .5f, .5f, 0f, .052f, "hair"),
+            part("nose_small", CharacterLayerSlot.NOSE, "head", .045f, .07f, 52, .5f, .5f, 0f, .085f),
+            part("mouth_smile", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
+            part("hair_front", CharacterLayerSlot.HAIR_FRONT, "head", .18f, .10f, 60, .5f, 0f, 0f, 0f, "hair"),
+            part("cap_front", CharacterLayerSlot.HAT_FRONT, "head", .20f, .105f, 65, .5f, 0f, 0f, -.012f, "shirt"),
+            part("glasses", CharacterLayerSlot.GLASSES, "head", .15f, .075f, 70, .5f, .5f, 0f, .065f),
+            part("chain", CharacterLayerSlot.CHAIN, "torso", .13f, .18f, 72, .5f, 0f, 0f, .10f),
+            part("medal", CharacterLayerSlot.MEDAL, "torso", .07f, .08f, 73, .5f, .5f, 0f, .23f),
+            part("watch", CharacterLayerSlot.WATCH, "foreArmR", .045f, .065f, 74, .5f, .5f, 0f, .07f),
+            part("stick_l", CharacterLayerSlot.STICK_L, "foreArmL", .025f, .18f, 80, .5f, .5f, 0f, .045f),
+            part("stick_r", CharacterLayerSlot.STICK_R, "foreArmR", .025f, .18f, 80, .5f, .5f, 0f, .045f),
+            part("drum_shell", CharacterLayerSlot.DRUM, "torso", .22f, .18f, 75, .5f, .5f, .17f, .19f),
+            part("drum_stand", CharacterLayerSlot.DRUM_STAND, "torso", .16f, .15f, 74, .5f, 0f, .17f, .34f)
+        )
+        val defaults = parts.associate { it.slot to it.id }
+        return CharacterLayerManifest("jedl_master_starter", 1, parts, defaults)
+    }
+
     fun parse(json: String): CharacterLayerManifest? = try {
         val root = JSONObject(json)
         val partsJson = root.getJSONArray("parts")
@@ -167,9 +216,9 @@ object CharacterLayerLibrary {
                 .bufferedReader().use { it.readText() }
             CharacterLayerContract.parse(json)?.takeIf {
                 CharacterLayerContract.validate(it).isValid
-            }
+            } ?: CharacterLayerContract.starterManifest()
         } catch (_: Exception) {
-            null
+            CharacterLayerContract.starterManifest()
         }
     }
 
