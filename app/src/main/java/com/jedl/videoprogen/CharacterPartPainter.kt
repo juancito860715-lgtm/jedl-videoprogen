@@ -46,8 +46,8 @@ internal object CharacterPartPainter {
             "hair_back" -> oval(canvas,.02f,.00f,.98f,.55f,hair,OUTLINE,.025f)
             "hair_front" -> {
                 val path=Path().apply {
-                    moveTo(.08f,.38f); cubicTo(.04f,.02f,.28f,-.04f,.48f,.08f)
-                    cubicTo(.70f,-.02f,.96f,.12f,.93f,.40f)
+                    moveTo(.08f,.38f); cubicTo(.04f,.10f,.28f,.02f,.48f,.12f)
+                    cubicTo(.70f,.02f,.96f,.12f,.93f,.40f)
                     cubicTo(.78f,.28f,.68f,.32f,.56f,.25f)
                     cubicTo(.39f,.35f,.25f,.27f,.08f,.38f); close()
                 }
