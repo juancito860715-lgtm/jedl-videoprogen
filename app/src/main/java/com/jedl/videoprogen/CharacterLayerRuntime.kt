@@ -21,7 +21,7 @@ enum class CharacterLayerSlot {
     FOREARM_L, FOREARM_R, HAND_L, HAND_R,
     THIGH_L, THIGH_R, SHIN_L, SHIN_R, FOOT_L, FOOT_R,
     SHOE_L, SHOE_R, GLASSES, CHAIN, MEDAL, WATCH,
-    STICK_L, STICK_R, DRUM, DRUM_STAND
+    STICK_L, STICK_R, DRUM, DRUM_HEAD, DRUM_STAND
 }
 
 data class CharacterLayerDef(
@@ -119,7 +119,11 @@ object CharacterLayerContract {
             id, slot, bone, "builtin://$id", px, py, w, z, tint, h, ox, oy
         )
         val parts = listOf(
+            part("hat_back", CharacterLayerSlot.HAT_BACK, "head", .20f, .12f, 4, .5f, 0f, 0f, .12f, "shirt"),
             part("hair_back", CharacterLayerSlot.HAIR_BACK, "head", .18f, .20f, 5),
+            part("hair_short", CharacterLayerSlot.HAIR_FRONT, "head", .18f, .10f, 60, .5f, 0f, 0f, .12f, "hair"),
+            part("hair_afro", CharacterLayerSlot.HAIR_FRONT, "head", .20f, .13f, 60, .5f, 0f, 0f, .11f, "hair"),
+            part("hair_long", CharacterLayerSlot.HAIR_FRONT, "head", .20f, .19f, 60, .5f, 0f, 0f, .02f, "hair"),
             part("ear_left", CharacterLayerSlot.EAR_L, "head", .055f, .065f, 12, .5f, .5f, -.073f, .105f, "skin"),
             part("ear_right", CharacterLayerSlot.EAR_R, "head", .055f, .065f, 12, .5f, .5f, .073f, .105f, "skin"),
             part("neck", CharacterLayerSlot.NECK, "head", .065f, .055f, 15, .5f, 1f, 0f, 0f, "skin"),
@@ -135,15 +139,20 @@ object CharacterLayerContract {
             part("thigh_r", CharacterLayerSlot.THIGH_R, "thighR", .085f, .19f, 29, .5f, 0f, 0f, tint = "pants"),
             part("shin_l", CharacterLayerSlot.SHIN_L, "shinL", .072f, .18f, 30, .5f, 0f, 0f, 0f, tint = "pants"),
             part("shin_r", CharacterLayerSlot.SHIN_R, "shinR", .072f, .18f, 30, .5f, 0f, 0f, tint = "pants"),
+            part("foot_l", CharacterLayerSlot.FOOT_L, "shinL", .095f, .055f, 33, .5f, 0f, 0f, .145f, "skin"),
+            part("foot_r", CharacterLayerSlot.FOOT_R, "shinR", .095f, .055f, 33, .5f, 0f, 0f, .145f, "skin"),
             part("shoe_l", CharacterLayerSlot.SHOE_L, "shinL", .105f, .065f, 34, .5f, 0f, 0f, .145f, "shoes"),
             part("shoe_r", CharacterLayerSlot.SHOE_R, "shinR", .105f, .065f, 34, .5f, 0f, 0f, .145f, "shoes"),
             part("hand_l", CharacterLayerSlot.HAND_L, "foreArmL", .060f, .075f, 35, .5f, 0f, 0f, .105f, "skin"),
             part("hand_r", CharacterLayerSlot.HAND_R, "foreArmR", .060f, .075f, 35, .5f, 0f, 0f, .105f, "skin"),
             part("head_base", CharacterLayerSlot.HEAD, "head", .18f, .20f, 40, .5f, 0f, 0f, 0f, "skin"),
             part("eyes_pair", CharacterLayerSlot.EYES, "head", .13f, .10f, 50, .5f, .5f, 0f, .065f),
+            part("eyes_closed", CharacterLayerSlot.EYES, "head", .13f, .10f, 50, .5f, .5f, 0f, .065f),
             part("brows_pair", CharacterLayerSlot.EYEBROWS, "head", .13f, .08f, 51, .5f, .5f, 0f, .052f, "hair"),
             part("nose_small", CharacterLayerSlot.NOSE, "head", .045f, .07f, 52, .5f, .5f, 0f, .085f),
             part("mouth_smile", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
+            part("mouth_neutral", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
+            part("mouth_open", CharacterLayerSlot.MOUTH, "head", .075f, .065f, 53, .5f, .5f, 0f, .12f),
             part("hair_front", CharacterLayerSlot.HAIR_FRONT, "head", .18f, .10f, 60, .5f, 0f, 0f, 0f, "hair"),
             part("cap_front", CharacterLayerSlot.HAT_FRONT, "head", .20f, .105f, 65, .5f, 0f, 0f, -.012f, "shirt"),
             part("glasses", CharacterLayerSlot.GLASSES, "head", .15f, .075f, 70, .5f, .5f, 0f, .065f),
@@ -153,6 +162,7 @@ object CharacterLayerContract {
             part("stick_l", CharacterLayerSlot.STICK_L, "foreArmL", .025f, .18f, 80, .5f, .5f, 0f, .045f),
             part("stick_r", CharacterLayerSlot.STICK_R, "foreArmR", .025f, .18f, 80, .5f, .5f, 0f, .045f),
             part("drum_shell", CharacterLayerSlot.DRUM, "torso", .22f, .18f, 75, .5f, .5f, .17f, .19f),
+            part("drum_head", CharacterLayerSlot.DRUM_HEAD, "torso", .22f, .055f, 76, .5f, .5f, .17f, .19f),
             part("drum_stand", CharacterLayerSlot.DRUM_STAND, "torso", .16f, .15f, 74, .5f, 0f, .17f, .34f)
         )
         val defaults = parts.associate { it.slot to it.id }
