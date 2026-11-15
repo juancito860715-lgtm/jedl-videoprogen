@@ -69,6 +69,13 @@ object AvatarRenderer {
             return
         }
 
+        // El banco modular (si existe) tiene prioridad; sin manifest/PNG válidos
+        // se conserva intacto el renderer vectorial de compatibilidad.
+        if (CharacterLayerLibrary.draw(canvas, solved, appearanceFor(spec))) {
+            lastRenderPath = "MODULAR_LAYERS"
+            return
+        }
+
         // Registrar la ruta realmente ejecutada, no solo la disponibilidad del manifest.
         if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) {
             lastRenderPath = "PNG_PIECES"
@@ -88,6 +95,17 @@ object AvatarRenderer {
             }
         }
     }
+
+    private fun appearanceFor(spec: AvatarSpec): CharacterLayerAppearance =
+        CharacterLayerAppearance(
+            colors = mapOf(
+                "skin" to spec.skin,
+                "hair" to spec.hair,
+                "shirt" to spec.shirt,
+                "pants" to spec.pants,
+                "shoes" to spec.shoes
+            )
+        )
 
     private inline fun bone(
         canvas: Canvas, solved: Map<String, BonePose>,
