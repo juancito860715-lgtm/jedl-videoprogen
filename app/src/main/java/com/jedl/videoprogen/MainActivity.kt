@@ -181,6 +181,8 @@ class MainActivity : ComponentActivity() {
         ttsManager = TtsManager(this)
         projectRepository = ProjectRepository(this)
         projectAssetStore = ProjectAssetStore(this)
+        // Optional modular character pack; absent assets keep the vector avatar active.
+        CharacterLayerLibrary.init(applicationContext)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
