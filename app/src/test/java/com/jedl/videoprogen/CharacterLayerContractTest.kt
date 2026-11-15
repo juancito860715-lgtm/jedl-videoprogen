@@ -77,6 +77,41 @@ class CharacterLayerContractTest {
         assertTrue(result.errors.any { it.contains("belongs to") })
     }
 
+    @Test fun builtInStarterPackCoversTheHumanoidRig() {
+        val manifest = CharacterLayerContract.starterManifest()
+        assertTrue(CharacterLayerContract.validate(manifest).errors.joinToString()).also { }
+        assertTrue(CharacterLayerContract.validate(manifest).isValid)
+        val resolved = CharacterLayerContract.resolve(manifest, CharacterLayerAppearance())
+        assertTrue(resolved.size >= 30)
+        assertTrue(resolved.all { it.file.startsWith("builtin://") })
+        assertTrue(resolved.all { it.boneId in CharacterLayerContract.supportedBones })
+        val bones = resolved.map { it.boneId }.toSet()
+        assertTrue(bones.containsAll(setOf(
+            "torso", "head", "armUL", "foreArmL", "armUR",
+            "foreArmR", "thighL", "shinL", "thighR", "shinR"
+        )))
+    }
+
+    @Test fun starterAppearanceCanReplaceOnlyTheHatLayer() {
+        val manifest = CharacterLayerContract.starterManifest()
+        val alternate = manifest.copy(
+            parts = manifest.parts + CharacterLayerDef(
+                "cap_alt", CharacterLayerSlot.HAT_FRONT, "head", "builtin://cap_front",
+                0.5f, 0f, 0.20f, 0.105f, null
+            )
+        )
+        val resolved = CharacterLayerContract.resolve(
+            alternate,
+            CharacterLayerAppearance(selectedParts = mapOf(CharacterLayerSlot.HAT_FRONT to "cap_alt"))
+        )
+        assertEquals("cap_alt", resolved.single { it.slot == CharacterLayerSlot.HAT_FRONT }.id)
+        assertEquals(
+            CharacterLayerContract.resolve(manifest, CharacterLayerAppearance())
+                .filter { it.slot != CharacterLayerSlot.HAT_FRONT }.map { it.id }.toSet(),
+            resolved.filter { it.slot != CharacterLayerSlot.HAT_FRONT }.map { it.id }.toSet()
+        )
+    }
+
     @Test fun parserReadsIndependentPartsAndDefaults() {
         val json = """{
           "id":"jedl_master_v1","version":1,
