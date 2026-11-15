@@ -165,7 +165,11 @@ object CharacterLayerContract {
             part("drum_head", CharacterLayerSlot.DRUM_HEAD, "torso", .22f, .055f, 76, .5f, .5f, .17f, .19f),
             part("drum_stand", CharacterLayerSlot.DRUM_STAND, "torso", .16f, .15f, 74, .5f, 0f, .17f, .34f)
         )
-        val defaults = parts.associate { it.slot to it.id }
+        val defaults = parts.associate { it.slot to it.id } + mapOf(
+            CharacterLayerSlot.HAIR_FRONT to "hair_front",
+            CharacterLayerSlot.EYES to "eyes_pair",
+            CharacterLayerSlot.MOUTH to "mouth_smile"
+        )
         return CharacterLayerManifest("jedl_master_starter", 1, parts, defaults)
     }
 
