@@ -84,6 +84,9 @@ class CharacterLayerContractTest {
         assertTrue(resolved.size >= 30)
         assertTrue(resolved.all { it.file.startsWith("builtin://") })
         assertTrue(resolved.all { it.boneId in CharacterLayerContract.supportedBones })
+        assertTrue(resolved.all {
+            CharacterPartPainter.supportedPartIds.contains(it.file.removePrefix("builtin://"))
+        })
         val bones = resolved.map { it.boneId }.toSet()
         assertTrue(bones.containsAll(setOf(
             "torso", "head", "armUL", "foreArmL", "armUR",
