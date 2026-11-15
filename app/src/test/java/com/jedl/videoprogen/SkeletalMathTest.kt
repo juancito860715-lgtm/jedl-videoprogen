@@ -168,6 +168,7 @@ class SkeletalMathTest {
         assertTrue(result.upperAngleDegrees in -60f..60f)
         assertTrue(result.lowerAngleDegrees in -140f..5f)
         assertTrue(result.targetError > 0f)
+        assertTrue(result.targetError < 1.7f)
         assertTrue(result.targetError.isFinite())
     }
 }
