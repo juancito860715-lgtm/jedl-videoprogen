@@ -173,14 +173,15 @@ object SkeletalMath {
         fun candidate(direction: Float): TwoBoneRigSolution {
             val geometry = solveTwoBone(root, target, upperLength, lowerLength, direction)
             val desiredUpperWorld = angleDegrees(root, geometry.joint)
-            val desiredLowerWorld = angleDegrees(geometry.joint, geometry.end)
-
             val upperLocal = wrapDegrees(
                 desiredUpperWorld - parentWorldDegrees - upperRestDegrees
             ).coerceIn(upperMinDegrees, upperMaxDegrees)
             val actualUpperWorld = wrapDegrees(parentWorldDegrees + upperRestDegrees + upperLocal)
             val actualJoint = offset(root, actualUpperWorld, upperLength)
 
+            // If the upper joint was clamped, aim the lower segment from its
+            // actual new joint position rather than from the unclamped solution.
+            val desiredLowerWorld = angleDegrees(actualJoint, target)
             val lowerLocal = wrapDegrees(
                 desiredLowerWorld - actualUpperWorld - lowerRestDegrees
             ).coerceIn(lowerMinDegrees, lowerMaxDegrees)
