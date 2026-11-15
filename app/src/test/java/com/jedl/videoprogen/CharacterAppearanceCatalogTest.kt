@@ -71,7 +71,7 @@ class CharacterAppearanceCatalogTest {
 
     @Test
     fun appearanceCanSelectOnePartPerSlotAndIndependentColorChannels() {
-        val appearance = CharacterAppearanceDocument(
+        val appearance = CatalogAppearanceSelectionDocument(
             catalogId = "jedl_master_v1",
             selectedParts = mapOf(
                 CharacterSlot.SKIN to "skin_medium",
@@ -94,7 +94,7 @@ class CharacterAppearanceCatalogTest {
 
     @Test
     fun rejectsAppearancePartNotPresentInCatalog() {
-        val appearance = CharacterAppearanceDocument(
+        val appearance = CatalogAppearanceSelectionDocument(
             catalogId = "jedl_master_v1",
             selectedParts = mapOf(CharacterSlot.HAT to "hat_that_does_not_exist"),
             colors = emptyMap()
