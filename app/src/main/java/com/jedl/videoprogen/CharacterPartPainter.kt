@@ -82,18 +82,18 @@ internal object CharacterPartPainter {
                 }
                 fill(canvas,path,pants,OUTLINE,.025f)
             }
-            "upper_arm" -> capsule(canvas,.20f,.02f,.80f,.98f,.28f,skin)
-            "sleeve" -> capsule(canvas,.10f,.02f,.90f,.46f,.36f,shirt)
-            "forearm" -> capsule(canvas,.18f,.02f,.82f,.92f,.25f,skin)
-            "hand" -> {
+            "upper_arm", "upper_arm_l", "upper_arm_r" -> capsule(canvas,.20f,.02f,.80f,.98f,.28f,skin)
+            "sleeve", "sleeve_l", "sleeve_r" -> capsule(canvas,.10f,.02f,.90f,.46f,.36f,shirt)
+            "forearm", "forearm_l", "forearm_r" -> capsule(canvas,.18f,.02f,.82f,.92f,.25f,skin)
+            "hand", "hand_l", "hand_r" -> {
                 oval(canvas,.12f,.10f,.88f,.88f,skin,OUTLINE,.025f)
                 line(canvas,.30f,.25f,.22f,.02f,skin,.10f)
                 line(canvas,.50f,.22f,.48f,-.02f,skin,.10f)
                 line(canvas,.70f,.27f,.78f,.05f,skin,.10f)
             }
-            "thigh" -> capsule(canvas,.18f,.00f,.82f,1.00f,.34f,pants)
-            "shin" -> capsule(canvas,.23f,.00f,.77f,.86f,.27f,pants)
-            "shoe" -> {
+            "thigh", "thigh_l", "thigh_r" -> capsule(canvas,.18f,.00f,.82f,1.00f,.34f,pants)
+            "shin", "shin_l", "shin_r" -> capsule(canvas,.23f,.00f,.77f,.86f,.27f,pants)
+            "shoe", "shoe_l", "shoe_r" -> {
                 val path=Path().apply {
                     moveTo(.15f,.52f); quadTo(.45f,.45f,.58f,.60f)
                     lineTo(.98f,.77f); quadTo(1.02f,.98f,.78f,.98f)
@@ -118,7 +118,7 @@ internal object CharacterPartPainter {
                 roundRect(canvas,.20f,.02f,.80f,.98f,0xFFD6B45D.toInt(),.12f)
                 roundRect(canvas,.30f,.22f,.70f,.78f,0xFF292D35.toInt(),.06f)
             }
-            "stick" -> line(canvas,.50f,.02f,.50f,.98f,0xFFE7D8B8.toInt(),.10f)
+            "stick", "stick_l", "stick_r" -> line(canvas,.50f,.02f,.50f,.98f,0xFFE7D8B8.toInt(),.10f)
             "drum_shell" -> {
                 roundRect(canvas,.04f,.12f,.96f,.90f,0xFFB83C35.toInt(),.12f)
                 line(canvas,.08f,.22f,.92f,.22f,0xFFD8C8A0.toInt(),.035f)
