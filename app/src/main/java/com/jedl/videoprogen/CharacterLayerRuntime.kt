@@ -14,7 +14,7 @@ import org.json.JSONObject
  * Pivots are normalized to each PNG's dimensions; zIndex is global back-to-front order.
  */
 enum class CharacterLayerSlot {
-    HEAD, EAR_L, EAR_R, EYES, EYEBROWS, NOSE, MOUTH,
+    HEAD, EAR_L, EAR_R, EYES, EYEBROWS, NOSE, MOUTH, FACIAL_HAIR,
     HAIR_BACK, HAIR_FRONT, HAT_BACK, HAT_FRONT,
     NECK, TORSO, SHIRT, PANTS,
     UPPER_ARM_L, UPPER_ARM_R, SLEEVE_L, SLEEVE_R,
@@ -49,7 +49,39 @@ data class CharacterLayerManifest(
 data class CharacterLayerAppearance(
     val selectedParts: Map<CharacterLayerSlot, String> = emptyMap(),
     val colors: Map<String, Int> = emptyMap()
-)
+) {
+    companion object {
+        /** Keeps the existing AvatarSpec controls functional on the modular renderer. */
+        fun fromAvatarSpec(spec: AvatarSpec): CharacterLayerAppearance {
+            val selected = mutableMapOf<CharacterLayerSlot, String>()
+            when (spec.hairStyle) {
+                0 -> selected[CharacterLayerSlot.HAIR_FRONT] = "hair_short"
+                1 -> selected[CharacterLayerSlot.HAIR_FRONT] = "hair_afro"
+                2 -> {
+                    selected[CharacterLayerSlot.HAIR_FRONT] = ""
+                    selected[CharacterLayerSlot.HAT_FRONT] = "cap_front"
+                    selected[CharacterLayerSlot.HAT_BACK] = "hat_back"
+                }
+                3 -> selected[CharacterLayerSlot.HAIR_FRONT] = ""
+                4 -> selected[CharacterLayerSlot.HAIR_FRONT] = "hair_long"
+                else -> selected[CharacterLayerSlot.HAIR_FRONT] = "hair_front"
+            }
+            if (spec.hairStyle != 2) {
+                selected[CharacterLayerSlot.HAT_FRONT] = ""
+                selected[CharacterLayerSlot.HAT_BACK] = ""
+            }
+            selected[CharacterLayerSlot.FACIAL_HAIR] =
+                if (spec.beard) "beard_short" else ""
+            return CharacterLayerAppearance(
+                selectedParts = selected,
+                colors = mapOf(
+                    "skin" to spec.skin, "hair" to spec.hair, "shirt" to spec.shirt,
+                    "pants" to spec.pants, "shoes" to spec.shoes
+                )
+            )
+        }
+    }
+}
 
 data class CharacterLayerValidation(val errors: List<String>) {
     val isValid: Boolean get() = errors.isEmpty()
@@ -153,6 +185,7 @@ object CharacterLayerContract {
             part("mouth_smile", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
             part("mouth_neutral", CharacterLayerSlot.MOUTH, "head", .075f, .055f, 53, .5f, .5f, 0f, .12f),
             part("mouth_open", CharacterLayerSlot.MOUTH, "head", .075f, .065f, 53, .5f, .5f, 0f, .12f),
+            part("beard_short", CharacterLayerSlot.FACIAL_HAIR, "head", .12f, .075f, 55, .5f, 0f, 0f, .02f, "hair"),
             part("hair_front", CharacterLayerSlot.HAIR_FRONT, "head", .18f, .10f, 60, .5f, 0f, 0f, 0f, "hair"),
             part("cap_front", CharacterLayerSlot.HAT_FRONT, "head", .20f, .105f, 65, .5f, 0f, 0f, .12f, "shirt"),
             part("glasses", CharacterLayerSlot.GLASSES, "head", .15f, .075f, 70, .5f, .5f, 0f, .065f),
