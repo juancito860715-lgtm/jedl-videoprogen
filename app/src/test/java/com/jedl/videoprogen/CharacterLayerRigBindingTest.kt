@@ -16,6 +16,13 @@ class CharacterLayerRigBindingTest {
         assertTrue(layers.all { it.boneId in rigNames })
     }
 
+    @Test fun allStarterArtworkIdsHaveAConcretePainterImplementation() {
+        val manifest = CharacterLayerContract.starterManifest()
+        assertTrue(manifest.parts.all {
+            CharacterPartPainter.supportedPartIds.contains(it.file.removePrefix("builtin://"))
+        })
+    }
+
     @Test fun forearmFollowsUpperArmRotationThroughExistingHierarchy() {
         val bind = PuppetRig.HUMANOID.solve(emptyMap(), 0f, 0f)
         val animated = PuppetRig.HUMANOID.solve(mapOf("armUL" to 35f), 0f, 0f)
