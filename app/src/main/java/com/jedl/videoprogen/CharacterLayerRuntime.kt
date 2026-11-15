@@ -67,7 +67,7 @@ object CharacterLayerContract {
         if (ids.size != ids.toSet().size) errors += "Duplicate part id"
         manifest.parts.forEach { part ->
             if (part.boneId !in supportedBones) errors += "Unknown bone for ${part.id}: ${part.boneId}"
-            val normalizedPath = part.file.replace('\\\\', '/')
+            val normalizedPath = part.file.replace(92.toChar(), '/')
             if (normalizedPath.isBlank() || normalizedPath.startsWith("/") ||
                 normalizedPath.split('/').any { it == ".." } ||
                 !normalizedPath.endsWith(".png", ignoreCase = true)
