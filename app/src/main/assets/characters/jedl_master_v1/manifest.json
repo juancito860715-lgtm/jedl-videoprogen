@@ -615,6 +615,20 @@
       "zIndex": 76,
       "offsetX": 0.17,
       "offsetY": 0.19
+    },
+    {
+      "id": "beard_short",
+      "slot": "FACIAL_HAIR",
+      "boneId": "head",
+      "file": "builtin://beard_short",
+      "pivotX": 0.5,
+      "pivotY": 0,
+      "widthUnits": 0.12,
+      "heightUnits": 0.075,
+      "zIndex": 55,
+      "offsetX": 0,
+      "offsetY": 0.02,
+      "tintChannel": "hair"
     }
   ],
   "defaults": {
