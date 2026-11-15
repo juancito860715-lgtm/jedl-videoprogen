@@ -85,4 +85,89 @@ class SkeletalMathTest {
         }
         assertTrue(nonFiniteRejected)
     }
+
+    @Test
+    fun rigAngleSolverReachesTargetAndHonorsNegativeLowerJointLimit() {
+        val result = SkeletalMath.solveTwoBoneAngles(
+            root = Vec2(0f, 0f),
+            target = Vec2(4f, 6f),
+            upperLength = 5f,
+            lowerLength = 5f,
+            currentJoint = Vec2(0f, -5f),
+            currentEnd = Vec2(0f, -10f),
+            parentWorldDegrees = 35f,
+            upperRestDegrees = 180f,
+            lowerRestDegrees = 0f,
+            upperMinDegrees = -180f,
+            upperMaxDegrees = 180f,
+            lowerMinDegrees = -150f,
+            lowerMaxDegrees = 5f,
+            defaultBendDirection = -1f
+        )
+
+        assertTrue(result.reachedTarget)
+        assertEquals(-1f, result.bendDirection, 0f)
+        assertEquals(4f, result.end.x, 0.001f)
+        assertEquals(6f, result.end.y, 0.001f)
+        assertEquals(5f, hypot(result.joint.x.toDouble(), result.joint.y.toDouble()).toFloat(), 0.001f)
+        assertEquals(
+            5f,
+            hypot(
+                (result.end.x - result.joint.x).toDouble(),
+                (result.end.y - result.joint.y).toDouble()
+            ).toFloat(),
+            0.001f
+        )
+        assertTrue(result.lowerAngleDegrees in -150f..5f)
+    }
+
+    @Test
+    fun rigAngleSolverKeepsExistingBendSideWhenCurrentPoseIsAlreadyBent() {
+        val result = SkeletalMath.solveTwoBoneAngles(
+            root = Vec2(0f, 0f),
+            target = Vec2(4f, 6f),
+            upperLength = 5f,
+            lowerLength = 5f,
+            currentJoint = Vec2(4.88f, 1.08f),
+            currentEnd = Vec2(4f, 6f),
+            parentWorldDegrees = 0f,
+            upperRestDegrees = 180f,
+            lowerRestDegrees = 0f,
+            upperMinDegrees = -180f,
+            upperMaxDegrees = 180f,
+            lowerMinDegrees = -150f,
+            lowerMaxDegrees = 5f,
+            defaultBendDirection = 1f
+        )
+
+        assertEquals(-1f, result.bendDirection, 0f)
+        assertTrue(result.reachedTarget)
+        assertTrue(result.lowerAngleDegrees in -150f..5f)
+    }
+
+    @Test
+    fun rigAngleSolverAppliesBothJointLimitsAndReportsRemainingError() {
+        val result = SkeletalMath.solveTwoBoneAngles(
+            root = Vec2(0f, 0f),
+            target = Vec2(8f, 0f),
+            upperLength = 3f,
+            lowerLength = 4f,
+            currentJoint = Vec2(0f, -3f),
+            currentEnd = Vec2(0f, -7f),
+            parentWorldDegrees = 0f,
+            upperRestDegrees = 180f,
+            lowerRestDegrees = 0f,
+            upperMinDegrees = -60f,
+            upperMaxDegrees = 60f,
+            lowerMinDegrees = -140f,
+            lowerMaxDegrees = 5f,
+            defaultBendDirection = -1f
+        )
+
+        assertFalse(result.reachedTarget)
+        assertTrue(result.upperAngleDegrees in -60f..60f)
+        assertTrue(result.lowerAngleDegrees in -140f..5f)
+        assertTrue(result.targetError > 0f)
+        assertTrue(result.targetError.isFinite())
+    }
 }
