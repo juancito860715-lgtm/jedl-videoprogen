@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -173,10 +172,13 @@ object CharacterLayerLibrary {
         val ctx = appContext ?: return false
         val current = manifest ?: return false
         val layers = CharacterLayerContract.resolve(current, appearance)
-        if (layers.isEmpty()) return false
-        for (layer in layers) {
-            val pose = solved[layer.boneId] ?: continue
-            val bitmap = bitmapFor(ctx, layer.file) ?: continue
+        if (layers.isEmpty() || layers.any { solved[it.boneId] == null }) return false
+        val prepared = layers.map { layer ->
+            val bitmap = bitmapFor(ctx, layer.file) ?: return false
+            layer to bitmap
+        }
+        for ((layer, bitmap) in prepared) {
+            val pose = solved[layer.boneId] ?: return false
             val width = layer.widthUnits
             val height = width * bitmap.height.toFloat() / bitmap.width.toFloat()
             val save = canvas.save()
@@ -206,7 +208,7 @@ object CharacterLayerLibrary {
             val bitmap = context.assets.open("$ASSET_DIR/$file").use {
                 BitmapFactory.decodeStream(it)
             } ?: return null
-            if (bitmap.config != Bitmap.Config.ARGB_8888 && bitmap.hasAlpha().not()) {
+            if (!bitmap.hasAlpha()) {
                 bitmap.recycle()
                 return null
             }
