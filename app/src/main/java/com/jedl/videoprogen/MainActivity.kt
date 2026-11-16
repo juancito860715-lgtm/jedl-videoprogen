@@ -898,8 +898,8 @@ class MainActivity : ComponentActivity() {
                 avatarMode = true
                 showExportBtn = true
                 faceEditMode = false
-                statusMsg = "Cara recortada · el personaje ya la lleva puesta"
-                drawPreview()
+                statusMsg = "Cara recortada · guardando vínculo con el personaje"
+                if (face != null) persistFaceToProject(face) else drawPreview()
             }
         }.start()
     }
