@@ -106,7 +106,8 @@ class SkeletalMathTest {
         )
 
         assertTrue(result.reachedTarget)
-        assertEquals(-1f, result.bendDirection, 0f)
+        assertEquals(1f, result.bendDirection, 0f)
+        assertTrue(result.lowerAngleDegrees < 0f)
         assertEquals(4f, result.end.x, 0.001f)
         assertEquals(6f, result.end.y, 0.001f)
         assertEquals(5f, hypot(result.joint.x.toDouble(), result.joint.y.toDouble()).toFloat(), 0.001f)
@@ -128,7 +129,7 @@ class SkeletalMathTest {
             target = Vec2(4f, 6f),
             upperLength = 5f,
             lowerLength = 5f,
-            currentJoint = Vec2(4.88f, 1.08f),
+            currentJoint = Vec2(-0.88f, 4.92f),
             currentEnd = Vec2(4f, 6f),
             parentWorldDegrees = 0f,
             upperRestDegrees = 180f,
@@ -140,8 +141,9 @@ class SkeletalMathTest {
             defaultBendDirection = 1f
         )
 
-        assertEquals(-1f, result.bendDirection, 0f)
+        assertEquals(1f, result.bendDirection, 0f)
         assertTrue(result.reachedTarget)
+        assertTrue(result.lowerAngleDegrees < 0f)
         assertTrue(result.lowerAngleDegrees in -150f..5f)
     }
 
@@ -168,7 +170,11 @@ class SkeletalMathTest {
         assertTrue(result.upperAngleDegrees in -60f..60f)
         assertTrue(result.lowerAngleDegrees in -140f..5f)
         assertTrue(result.targetError > 0f)
-        assertTrue(result.targetError < 1.7f)
+        assertEquals(
+            result.targetError,
+            hypot((result.end.x - 8f).toDouble(), result.end.y.toDouble()).toFloat(),
+            0.001f
+        )
         assertTrue(result.targetError.isFinite())
     }
 
@@ -213,5 +219,60 @@ class SkeletalMathTest {
         assertTrue(result.reachedTarget)
         assertEquals(target.x, result.end.x, 0.001f)
         assertEquals(target.y, result.end.y, 0.001f)
+    }
+
+    @Test
+    fun hierarchyChildAttachmentFollowsRotatedParentTip() {
+        val bones = listOf(
+            SkeletalBoneDefinition(
+                name = "root",
+                parent = null,
+                length = 10f,
+                attachX = 0f,
+                attachY = 0f,
+                restDegrees = 90f
+            ),
+            SkeletalBoneDefinition(
+                name = "child",
+                parent = "root",
+                length = 5f,
+                attachX = 0f,
+                attachY = 10f,
+                restDegrees = 0f
+            )
+        )
+
+        val solved = SkeletalMath.resolveHierarchy(
+            bones = bones,
+            angles = emptyMap(),
+            rootX = 3f,
+            rootY = 4f
+        )
+        val root = solved.getValue("root")
+        val child = solved.getValue("child")
+
+        assertEquals(3f, root.joint.x, 0.001f)
+        assertEquals(4f, root.joint.y, 0.001f)
+        assertEquals(-7f, root.tip.x, 0.001f)
+        assertEquals(4f, root.tip.y, 0.001f)
+        assertEquals(root.tip.x, child.joint.x, 0.001f)
+        assertEquals(root.tip.y, child.joint.y, 0.001f)
+        assertEquals(-12f, child.tip.x, 0.001f)
+        assertEquals(4f, child.tip.y, 0.001f)
+        assertEquals(90f, child.worldDegrees, 0.001f)
+    }
+
+    @Test
+    fun screenAngleUsesAndroidClockwiseMatrixConvention() {
+        assertEquals(
+            90f,
+            SkeletalMath.angleDegrees(Vec2(0f, 0f), Vec2(-1f, 0f)),
+            0.001f
+        )
+        assertEquals(
+            -90f,
+            SkeletalMath.angleDegrees(Vec2(0f, 0f), Vec2(1f, 0f)),
+            0.001f
+        )
     }
 }
