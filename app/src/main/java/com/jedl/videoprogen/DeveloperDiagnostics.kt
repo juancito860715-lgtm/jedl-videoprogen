@@ -40,6 +40,10 @@ data class DeveloperDiagnosticsSnapshot(
     val builtinVectorPartsAvailable: Boolean = false,
     val characterPngAssetsAvailable: Boolean = false,
     val avatarRenderPath: String = "NOT_RENDERED",
+    val characterAppearanceEnabled: Boolean? = null,
+    val layerVisible: Boolean? = null,
+    val posX: Float? = null,
+    val posY: Float? = null,
     val layers: List<DeveloperLayerSnapshot> = emptyList()
 ) {
     fun toJson(): String {
@@ -75,6 +79,10 @@ data class DeveloperDiagnosticsSnapshot(
             .put("builtinVectorPartsAvailable", builtinVectorPartsAvailable)
             .put("characterPngAssetsAvailable", characterPngAssetsAvailable)
             .put("renderPath", avatarRenderPath)
+            .putNullable("characterAppearanceEnabled", characterAppearanceEnabled)
+            .putNullable("layerVisible", layerVisible)
+            .putNullable("posX", posX)
+            .putNullable("posY", posY)
 
         val layerArray = JSONArray()
         layers.sortedBy { it.zIndex }.forEach { layer ->

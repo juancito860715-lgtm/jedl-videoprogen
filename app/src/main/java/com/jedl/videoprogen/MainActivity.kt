@@ -2048,6 +2048,10 @@ class MainActivity : ComponentActivity() {
             builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
             characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
             avatarRenderPath = AvatarRenderer.lastRenderPath,
+            characterAppearanceEnabled = layers.firstOrNull { it.type == LayerType.CHARACTER }?.characterAppearance?.enabled,
+            layerVisible = layers.firstOrNull { it.type == LayerType.CHARACTER }?.visible,
+            posX = layers.firstOrNull { it.type == LayerType.CHARACTER }?.transform?.x,
+            posY = layers.firstOrNull { it.type == LayerType.CHARACTER }?.transform?.y,
             layers = layers.map {
                 DeveloperLayerSnapshot(
                     id = it.id,
