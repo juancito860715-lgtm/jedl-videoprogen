@@ -1952,9 +1952,6 @@ class MainActivity : ComponentActivity() {
         val photoLayer = layers
             .filter { it.type == LayerType.IMAGE || it.type == LayerType.BACKGROUND }
             .maxByOrNull { it.zIndex }
-        val characterLayerActive = layers.any {
-            it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime)
-        }
         val sourcePhoto = originalPhoto ?: photo
         val face = faceBitmap
         val snapshot = DeveloperDiagnosticsSnapshot(
@@ -1983,7 +1980,6 @@ class MainActivity : ComponentActivity() {
             builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
             characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
             avatarRenderPath = AvatarRenderer.lastRenderPath,
-            faceBitmapProvidedToAvatarRenderer = AvatarRenderer.lastFaceBitmapProvided,
             layers = layers.map {
                 DeveloperLayerSnapshot(
                     id = it.id,
