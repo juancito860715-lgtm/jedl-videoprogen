@@ -58,4 +58,29 @@ class DeveloperDiagnosticsTest {
         assertTrue(face.isNull("faceCutterReturnedBitmap"))
         assertEquals(0, json.getJSONArray("sceneLayers").length())
     }
+
+    @Test
+    fun reportsLegacyAndModularCharacterLibrariesIndependently() {
+        val report = DeveloperDiagnosticsSnapshot(
+            pieceLibraryInitialized = false,
+            pieceManifestFound = false,
+            pngPiecesAvailable = false,
+            characterLayerLibraryInitialized = true,
+            characterManifestSource = "ASSET_MANIFEST",
+            builtinVectorPartsAvailable = true,
+            characterPngAssetsAvailable = false,
+            avatarRenderPath = "MODULAR_LAYERS"
+        )
+
+        val avatar = JSONObject(report.toJson()).getJSONObject("avatar")
+        assertFalse(avatar.getBoolean("pieceLibraryInitialized"))
+        assertFalse(avatar.getBoolean("pieceManifestFound"))
+        assertFalse(avatar.getBoolean("pngPiecesAvailable"))
+        assertTrue(avatar.getBoolean("characterLayerLibraryInitialized"))
+        assertEquals("ASSET_MANIFEST", avatar.getString("characterManifestSource"))
+        assertTrue(avatar.getBoolean("builtinVectorPartsAvailable"))
+        assertFalse(avatar.getBoolean("characterPngAssetsAvailable"))
+        assertEquals("MODULAR_LAYERS", avatar.getString("renderPath"))
+    }
+
 }
