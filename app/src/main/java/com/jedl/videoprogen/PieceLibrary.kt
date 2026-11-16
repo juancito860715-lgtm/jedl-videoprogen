@@ -5,85 +5,61 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 
-// ============================================================
-// F1 — BIBLIOTECA DE PIEZAS (carga + caché con desalojo explícito)
-// ============================================================
-// F1: sin manifests de PNG en assets => el renderer usa las
-// piezas vectoriales validadas (licencia limpia, cero riesgo).
-// F2: se sueltan los PNGs del banco + manifest en
-// assets/pieces/<estilo>/ y ESTE archivo los sirve tal cual,
-// con LruCache en KiB. El avatar activo y su vista se marcan
-// no-desalojables (partición fija) cuando entre el Banco (F2).
-// ============================================================
+/** Required PNG piece bank. Initialization is fail-fast: no silent fallback. */
 object PieceLibrary {
-
-    // Presupuesto F1: 4 MiB (F2 lo sube a ~24 MiB con partición fija)
-    private val cache = object : LruCache<String, Bitmap>(4 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(8 * 1024) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
     }
-
     @Volatile private var manifest: PieceManifest? = null
     @Volatile private var appContext: Context? = null
 
-    /** Carga el primer estilo con manifest válido en assets/pieces/. Idempotente. */
+    @Synchronized
     fun init(context: Context) {
-        if (manifest != null) return
-        appContext = context.applicationContext
-        manifest = try {
-            val styles = context.assets.list("pieces") ?: return
-            var found: PieceManifest? = null
-            for (style in styles) {
-                val json = context.assets.open("pieces/" + style + "/manifest.json")
-                    .bufferedReader().use { it.readText() }
-                found = PieceManifestParser.parse(json, style, "pieces/" + style)
-                if (found != null) break
-            }
-            found
-        } catch (e: Exception) {
-            null
+        if (manifest != null && appContext != null) return
+        val app = context.applicationContext
+        val styles = app.assets.list("pieces")
+            ?: error("PNG_PIECES_REQUIRED: falta assets/pieces/")
+        require(styles.contains("ritmo")) { "PNG_PIECES_REQUIRED: falta pieces/ritmo/" }
+        val baseDir = "pieces/ritmo"
+        val json = app.assets.open("$baseDir/manifest.json").bufferedReader().use { it.readText() }
+        val parsed = PieceManifestParser.parse(json, "ritmo", baseDir)
+            ?: error("PNG_PIECES_REQUIRED: manifest.json inválido")
+        val expected = AvatarRenderOrder.backToFront.toSet()
+        val actual = parsed.pieces.map { it.bone }
+        require(actual.size == 10 && actual.toSet() == expected) {
+            "PNG_PIECES_REQUIRED: el manifiesto debe declarar exactamente los 10 huesos del rig"
         }
+        require(actual.distinct().size == actual.size) { "PNG_PIECES_REQUIRED: huesos duplicados" }
+        require(parsed.pieces.map { it.file }.distinct().size == 10) {
+            "PNG_PIECES_REQUIRED: archivos PNG duplicados"
+        }
+        parsed.pieces.forEach { def ->
+            require(def.file.endsWith(".png", ignoreCase = true)) { "PNG_PIECES_REQUIRED: recurso no PNG: ${def.file}" }
+            require(def.widthUnits.isFinite() && def.widthUnits > 0f) { "PNG_PIECES_REQUIRED: widthUnits inválido" }
+            require(def.pivotX.isFinite() && def.pivotY.isFinite()) { "PNG_PIECES_REQUIRED: pivote inválido" }
+            val bitmap = app.assets.open("$baseDir/${def.file}").use { BitmapFactory.decodeStream(it) }
+                ?: error("PNG_PIECES_REQUIRED: PNG no decodificable: ${def.file}")
+            require(bitmap.width > 0 && bitmap.height > 0) { "PNG_PIECES_REQUIRED: PNG vacío: ${def.file}" }
+            cache.put(def.file, bitmap)
+        }
+        appContext = app
+        manifest = parsed
     }
 
-    fun hasBitmapPieces(): Boolean = manifest != null
-
-    /** Estado de inicialización real; no fuerza la carga de recursos. */
-    fun isInitialized(): Boolean = appContext != null
-
-    /** Comprueba presencia de los archivos declarados sin decodificar bitmaps. */
-    fun declaredPngFilesAvailable(): Boolean {
-        val ctx = appContext ?: return false
-        val man = manifest ?: return false
-        if (man.pieces.isEmpty()) return false
-        return man.pieces.all { def ->
-            try {
-                ctx.assets.open(man.baseDir + "/" + def.file).use { true }
-            } catch (_: Exception) {
-                false
-            }
-        }
-    }
-
+    fun isInitialized(): Boolean = manifest != null && appContext != null
+    fun hasBitmapPieces(): Boolean = isInitialized()
     fun declaredPieceCount(): Int = manifest?.pieces?.size ?: 0
-
+    fun declaredPngFilesAvailable(): Boolean = isInitialized()
     fun manifest(): PieceManifest? = manifest
+    fun piece(bone: String): PieceDef? = manifest?.pieces?.firstOrNull { it.bone == bone }
 
-    fun piece(bone: String): PieceDef? =
-        manifest?.pieces?.firstOrNull { it.bone == bone }
-
-    /** Decodifica con caché; null si el PNG falta (el renderer cae a vector). */
     fun bitmap(def: PieceDef): Bitmap? {
         cache.get(def.file)?.let { return it }
-        val ctx = appContext ?: return null
-        val man = manifest ?: return null
-        return try {
-            val opts = BitmapFactory.Options().apply { inSampleSize = 1 }
-            val bmp = ctx.assets.open(man.baseDir + "/" + def.file).use {
-                BitmapFactory.decodeStream(it, null, opts)
-            } ?: return null
-            cache.put(def.file, bmp)
-            bmp
-        } catch (e: Exception) {
-            null
-        }
+        val app = appContext ?: error("PNG_PIECES_REQUIRED: PieceLibrary no inicializada")
+        val man = manifest ?: error("PNG_PIECES_REQUIRED: manifiesto no cargado")
+        val bitmap = app.assets.open("${man.baseDir}/${def.file}").use { BitmapFactory.decodeStream(it) }
+            ?: error("PNG_PIECES_REQUIRED: PNG no decodificable: ${def.file}")
+        cache.put(def.file, bitmap)
+        return bitmap
     }
 }

@@ -80,19 +80,15 @@ object AvatarRenderer {
             return
         }
 
-        // El banco modular (si existe) tiene prioridad; sin manifest/PNG válidos
-        // se conserva intacto el renderer vectorial de compatibilidad.
-        if (CharacterLayerLibrary.draw(canvas, solved, appearanceFor(spec))) {
-            lastRenderPath = "MODULAR_LAYERS"
-            return
+        // F3: ruta PNG obligatoria. No existe fallback visual silencioso.
+        check(PieceLibrary.isInitialized()) {
+            "PNG_PIECES_REQUIRED: PieceLibrary debe inicializarse antes del render"
         }
-
-        // Registrar la ruta realmente ejecutada, no solo la disponibilidad del manifest.
-        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) {
-            lastRenderPath = "PNG_PIECES"
-            return
+        check(drawBitmapPieces(canvas, solved, spec)) {
+            "PNG_PIECES_REQUIRED: faltan piezas o poses del rig; render abortado"
         }
-        lastRenderPath = "VECTOR_FALLBACK"
+        lastRenderPath = "PNG_PIECES"
+        return
 
         // Piezas vectoriales del estilo base. El orden procede del contrato compartido.
         for (name in AvatarRenderOrder.backToFront) {
@@ -106,9 +102,6 @@ object AvatarRenderer {
             }
         }
     }
-
-    private fun appearanceFor(spec: AvatarSpec): CharacterLayerAppearance =
-        CharacterLayerAppearance.fromAvatarSpec(spec)
 
     private inline fun bone(
         canvas: Canvas, solved: Map<String, BonePose>,
