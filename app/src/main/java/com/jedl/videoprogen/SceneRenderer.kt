@@ -76,7 +76,8 @@ object SceneRenderer {
                 val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
                 val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
-                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, avatarFace, effectiveDirection)
+                val persistedFace = appearance?.faceAssetPath?.let { assetPath -> assetResolver?.invoke(assetPath) }
+                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, persistedFace ?: avatarFace, effectiveDirection)
             } else {
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
             }
