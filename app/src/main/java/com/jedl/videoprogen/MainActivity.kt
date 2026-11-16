@@ -1974,12 +1974,16 @@ class MainActivity : ComponentActivity() {
             faceBitmapValid = face != null && !face.isRecycled && face.width > 0 && face.height > 0,
             faceBitmapWidth = face?.takeUnless { it.isRecycled }?.width,
             faceBitmapHeight = face?.takeUnless { it.isRecycled }?.height,
-            facePassedToAvatarRenderer = faceFromPhoto && avatarMode &&
-                face != null && !face.isRecycled && characterLayerActive,
+            facePassedToAvatarRenderer = AvatarRenderer.lastFaceBitmapProvided,
             pieceLibraryInitialized = PieceLibrary.isInitialized(),
             pieceManifestFound = PieceLibrary.hasBitmapPieces(),
             pngPiecesAvailable = PieceLibrary.declaredPngFilesAvailable(),
+            characterLayerLibraryInitialized = CharacterLayerLibrary.isInitialized(),
+            characterManifestSource = CharacterLayerLibrary.manifestSource(),
+            builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
+            characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
             avatarRenderPath = AvatarRenderer.lastRenderPath,
+            faceBitmapProvidedToAvatarRenderer = AvatarRenderer.lastFaceBitmapProvided,
             layers = layers.map {
                 DeveloperLayerSnapshot(
                     id = it.id,
