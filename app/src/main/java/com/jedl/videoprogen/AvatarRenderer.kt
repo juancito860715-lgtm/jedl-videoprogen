@@ -50,6 +50,15 @@ object AvatarRenderer {
     @Volatile var lastRenderPath: String = "NOT_RENDERED"
         private set
 
+    @Volatile var lastFaceBitmapProvided: Boolean = false
+        private set
+
+    /** Reset frame-scoped diagnostics before each preview/export render. */
+    fun beginFrame() {
+        lastRenderPath = "NOT_RENDERED"
+        lastFaceBitmapProvided = false
+    }
+
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
         val r = ((argb ushr 16) and 0xFF) * 3 / 4
@@ -63,6 +72,8 @@ object AvatarRenderer {
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
+        lastFaceBitmapProvided = face != null && !face.isRecycled &&
+            face.width > 0 && face.height > 0
         if (DEBUG_RECTS) {
             lastRenderPath = "DEBUG_RECTS"
             drawDebugRects(canvas, solved)
