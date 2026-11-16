@@ -171,4 +171,47 @@ class SkeletalMathTest {
         assertTrue(result.targetError < 1.7f)
         assertTrue(result.targetError.isFinite())
     }
+
+    @Test
+    fun rigAngleSolverMatchesAndroidMatrixScreenRotationConvention() {
+        val root = Vec2(2f, 3f)
+        val target = Vec2(6f, 9f)
+        val result = SkeletalMath.solveTwoBoneAngles(
+            root = root,
+            target = target,
+            upperLength = 5f,
+            lowerLength = 5f,
+            currentJoint = Vec2(root.x, root.y - 5f),
+            currentEnd = Vec2(root.x, root.y - 10f),
+            parentWorldDegrees = 35f,
+            upperRestDegrees = 180f,
+            lowerRestDegrees = 0f,
+            upperMinDegrees = -180f,
+            upperMaxDegrees = 180f,
+            lowerMinDegrees = -150f,
+            lowerMaxDegrees = 5f,
+            defaultBendDirection = 1f
+        )
+
+        val upperWorld = SkeletalMath.wrapDegrees(
+            35f + 180f + result.upperAngleDegrees
+        )
+        val lowerWorld = SkeletalMath.wrapDegrees(
+            upperWorld + result.lowerAngleDegrees
+        )
+        val upperVector = SkeletalMath.matrix(
+            SkeletalTransform2D(rotationDegrees = upperWorld)
+        ).map(Vec2(0f, 5f))
+        val lowerVector = SkeletalMath.matrix(
+            SkeletalTransform2D(rotationDegrees = lowerWorld)
+        ).map(Vec2(0f, 5f))
+
+        assertEquals(root.x + upperVector.x, result.joint.x, 0.001f)
+        assertEquals(root.y + upperVector.y, result.joint.y, 0.001f)
+        assertEquals(result.joint.x + lowerVector.x, result.end.x, 0.001f)
+        assertEquals(result.joint.y + lowerVector.y, result.end.y, 0.001f)
+        assertTrue(result.reachedTarget)
+        assertEquals(target.x, result.end.x, 0.001f)
+        assertEquals(target.y, result.end.y, 0.001f)
+    }
 }
