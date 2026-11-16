@@ -59,25 +59,43 @@ class BonePose(
 // Esqueleto: resuelve la jerarquía completa con android.graphics.Matrix.
 // Los huesos se declaran SIEMPRE padres antes que hijos.
 class Skeleton(val bones: List<Bone>) {
+    private val definitions = bones.map { bone ->
+        SkeletalBoneDefinition(
+            name = bone.name,
+            parent = bone.parent,
+            length = bone.length,
+            attachX = bone.attachX,
+            attachY = bone.attachY,
+            restDegrees = bone.restDeg
+        )
+    }
 
     fun solve(angles: Map<String, Float>, rootX: Float, rootY: Float): LinkedHashMap<String, BonePose> {
+        val resolved = SkeletalMath.resolveHierarchy(definitions, angles, rootX, rootY)
         val out = LinkedHashMap<String, BonePose>()
-        for (b in bones) {
-            val parentPose = b.parent?.let { out[it] }
-            val m = Matrix()
-            var parentDeg = 0f
-            if (parentPose == null) {
-                m.setTranslate(rootX, rootY)
-            } else {
-                m.set(parentPose.matrix)
-                parentDeg = parentPose.worldDeg
-            }
-            m.postTranslate(b.attachX, b.attachY)
-            val anim = angles[b.name] ?: 0f
-            m.postRotate(b.restDeg + anim)
-            val pts = floatArrayOf(0f, 0f, 0f, b.length)
-            m.mapPoints(pts)
-            out[b.name] = BonePose(PointF(pts[0], pts[1]), PointF(pts[2], pts[3]), parentDeg + b.restDeg + anim, m)
+        val matrixValues = FloatArray(9)
+        matrixValues[6] = 0f
+        matrixValues[7] = 0f
+        matrixValues[8] = 1f
+
+        for (bone in bones) {
+            val pose = resolved[bone.name] ?: continue
+            val transform = pose.transform
+            matrixValues[0] = transform.m00
+            matrixValues[1] = transform.m01
+            matrixValues[2] = transform.m02
+            matrixValues[3] = transform.m10
+            matrixValues[4] = transform.m11
+            matrixValues[5] = transform.m12
+
+            val matrix = Matrix()
+            matrix.setValues(matrixValues)
+            out[bone.name] = BonePose(
+                joint = PointF(pose.joint.x, pose.joint.y),
+                tip = PointF(pose.tip.x, pose.tip.y),
+                worldDeg = pose.worldDegrees,
+                matrix = matrix
+            )
         }
         return out
     }
@@ -405,7 +423,9 @@ object PuppetEngine {
         // Si la pose está completamente recta, el centro del rango permitido
         // define el lado inicial: foreArmL/shin = negativo; foreArmR = positivo.
         val lowerRangeCenter = (lowerRange.first + lowerRange.second) * 0.5f
-        val defaultBendDirection = if (lowerRangeCenter < 0f) -1f else 1f
+        // With Android's clockwise screen-space matrix, a negative lower
+        // joint angle bends to the positive cross-product side.
+        val defaultBendDirection = if (lowerRangeCenter < 0f) 1f else -1f
 
         val result = SkeletalMath.solveTwoBoneAngles(
             root = Vec2(upperPose.joint.x, upperPose.joint.y),
@@ -467,11 +487,11 @@ object PuppetEngine {
     }
 
     // Ángulo de la dirección p0->p1 en la convención del rig (grados).
-    private fun angDeg(p0: PointF, p1: PointF): Float {
-        val dx = p1.x - p0.x
-        val dy = p1.y - p0.y
-        return Math.toDegrees(kotlin.math.atan2(dx.toDouble(), dy.toDouble())).toFloat()
-    }
+    private fun angDeg(p0: PointF, p1: PointF): Float =
+        SkeletalMath.angleDegrees(
+            Vec2(p0.x, p0.y),
+            Vec2(p1.x, p1.y)
+        )
 
     // Normaliza un ángulo a (-180, 180] para interpolar limpio.
     private fun wrapDeg(a: Float): Float {

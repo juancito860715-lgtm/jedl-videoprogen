@@ -41,6 +41,24 @@ data class TwoBoneRigSolution(
     val targetError: Float
 )
 
+/** Static definition of one bone in a parent-first hierarchy. */
+data class SkeletalBoneDefinition(
+    val name: String,
+    val parent: String?,
+    val length: Float,
+    val attachX: Float,
+    val attachY: Float,
+    val restDegrees: Float
+)
+
+/** World-space result for one bone; transform maps bone-local points to scene space. */
+data class SkeletalBonePose(
+    val joint: Vec2,
+    val tip: Vec2,
+    val worldDegrees: Float,
+    val transform: Affine2D
+)
+
 /**
  * Deterministic, allocation-light skeletal math shared by rig tests and runtime.
  * All distances are expressed in the character's normalized rig units.
@@ -62,6 +80,47 @@ object SkeletalMath {
     /** World = parent * local; child translations therefore inherit parent rotation and scale. */
     fun compose(parent: SkeletalTransform2D, local: SkeletalTransform2D): Affine2D =
         multiply(matrix(parent), matrix(local))
+
+
+    /**
+     * Resolves parent-first bones using World = Parent * Translate(attach) * Rotate(local).
+     * This is the local-space hierarchy used by the renderer and by the two-bone IK solver.
+     */
+    fun resolveHierarchy(
+        bones: List<SkeletalBoneDefinition>,
+        angles: Map<String, Float>,
+        rootX: Float = 0f,
+        rootY: Float = 0f
+    ): LinkedHashMap<String, SkeletalBonePose> {
+        requireFinite(rootX, rootY)
+        val rootTransform = matrix(SkeletalTransform2D(x = rootX, y = rootY))
+        val resolved = LinkedHashMap<String, SkeletalBonePose>()
+
+        for (bone in bones) {
+            requireFinite(bone.length, bone.attachX, bone.attachY, bone.restDegrees)
+            val localRotation = bone.restDegrees + (angles[bone.name] ?: 0f)
+            requireFinite(localRotation)
+            val parentPose = bone.parent?.let { resolved[it] }
+            val localTransform = matrix(
+                SkeletalTransform2D(
+                    x = bone.attachX,
+                    y = bone.attachY,
+                    rotationDegrees = localRotation
+                )
+            )
+            val worldTransform = multiply(parentPose?.transform ?: rootTransform, localTransform)
+            val worldDegrees = (parentPose?.worldDegrees ?: 0f) + localRotation
+            val joint = worldTransform.map(Vec2(0f, 0f))
+            val tip = worldTransform.map(Vec2(0f, bone.length))
+            resolved[bone.name] = SkeletalBonePose(
+                joint = joint,
+                tip = tip,
+                worldDegrees = worldDegrees,
+                transform = worldTransform
+            )
+        }
+        return resolved
+    }
 
     fun multiply(a: Affine2D, b: Affine2D): Affine2D = Affine2D(
         a.m00 * b.m00 + a.m01 * b.m10,
@@ -208,16 +267,17 @@ object SkeletalMath {
         return if (alternate.targetError + EPSILON < preferred.targetError) alternate else preferred
     }
 
-    private fun angleDegrees(from: Vec2, to: Vec2): Float =
+    /** Clockwise screen-space angle from the downward bone axis, matching android.graphics.Matrix. */
+    fun angleDegrees(from: Vec2, to: Vec2): Float =
         Math.toDegrees(kotlin.math.atan2(
-            (to.x - from.x).toDouble(),
+            -(to.x - from.x).toDouble(),
             (to.y - from.y).toDouble()
         )).toFloat()
 
     private fun offset(origin: Vec2, angleDegrees: Float, length: Float): Vec2 {
         val radians = angleDegrees * (PI.toFloat() / 180f)
         return Vec2(
-            origin.x + sin(radians) * length,
+            origin.x - sin(radians) * length,
             origin.y + cos(radians) * length
         )
     }
