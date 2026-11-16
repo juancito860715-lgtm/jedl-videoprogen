@@ -177,7 +177,6 @@ internal object CharacterPartPainter {
                 line(canvas,.08f,.22f,.92f,.22f,0xFFD8C8A0.toInt(),.035f)
                 line(canvas,.08f,.80f,.92f,.80f,0xFFD8C8A0.toInt(),.035f)
             }
-            "drum_head" -> oval(canvas,.02f,.02f,.98f,.30f,0xFFE8E2D4.toInt(),0xFF6D6A64.toInt(),.035f)
             "drum_head" -> oval(canvas,.02f,.02f,.98f,.98f,0xFFE8E2D4.toInt(),0xFF6D6A64.toInt(),.035f)
             "drum_stand" -> {
                 line(canvas,.50f,.05f,.50f,.72f,0xFF777D84.toInt(),.055f)
