@@ -1270,14 +1270,19 @@ class MainActivity : ComponentActivity() {
                     project.id, java.io.ByteArrayInputStream(bytes), "photo.png"
                 )
                 val scene = project.scenes.first()
+                // La foto principal va detrás del personaje; una nueva importación
+                // reemplaza la capa principal anterior sin tocar otras imágenes.
+                val retainedLayers = scene.layers.filterNot {
+                    it.type == LayerType.IMAGE && it.name == "Foto principal"
+                }
                 val imageLayer = LayerDocument(
                     name = "Foto principal",
                     type = LayerType.IMAGE,
                     assetPath = imported.relativePath,
-                    zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                    zIndex = (retainedLayers.minOfOrNull { it.zIndex } ?: 0) - 1
                 )
                 val saved = projectRepository.save(project.copy(
-                    scenes = listOf(scene.copy(layers = scene.layers + imageLayer)) + project.scenes.drop(1)
+                    scenes = listOf(scene.copy(layers = retainedLayers + imageLayer)) + project.scenes.drop(1)
                 ))
                 val newMesh = SkinnedMesh(bitmap)
                 runOnUiThread {
