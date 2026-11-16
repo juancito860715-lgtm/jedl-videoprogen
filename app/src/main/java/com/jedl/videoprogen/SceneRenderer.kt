@@ -23,6 +23,7 @@ object SceneRenderer {
         projectScene: SceneDocument? = null,
         assetResolver: ((String) -> Bitmap?)? = null
     ) {
+        AvatarRenderer.beginFrame()
         canvas.drawColor(projectScene?.backgroundColor ?: Color.BLACK)
         val projectMode = projectScene != null
         if (!projectMode && background != null) {
