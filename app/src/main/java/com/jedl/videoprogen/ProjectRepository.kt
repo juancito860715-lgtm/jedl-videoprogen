@@ -152,6 +152,7 @@ class ProjectRepository private constructor(private val root: File) {
                             put("direction", appearance.direction)
                             put("actorX", appearance.actorX.toDouble())
                             put("actorY", appearance.actorY.toDouble())
+                            put("faceAssetPath", appearance.faceAssetPath ?: JSONObject.NULL)
                         }
                     } ?: JSONObject.NULL)
                     put("text", layer.text)
@@ -260,7 +261,8 @@ class ProjectRepository private constructor(private val root: File) {
                         enabled = json.optBoolean("enabled", true),
                         direction = json.optString("direction", "der"),
                         actorX = json.optDouble("actorX", 0.5).toFloat(),
-                        actorY = json.optDouble("actorY", 0.55).toFloat()
+                        actorY = json.optDouble("actorY", 0.55).toFloat(),
+                        faceAssetPath = json.optString("faceAssetPath").takeIf { it.isNotBlank() && it != "null" }
                     )
                 }
                 layers.add(LayerDocument(

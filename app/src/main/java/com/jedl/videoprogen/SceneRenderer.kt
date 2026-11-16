@@ -23,6 +23,7 @@ object SceneRenderer {
         projectScene: SceneDocument? = null,
         assetResolver: ((String) -> Bitmap?)? = null
     ) {
+        AvatarRenderer.beginFrame()
         canvas.drawColor(projectScene?.backgroundColor ?: Color.BLACK)
         val projectMode = projectScene != null
         if (!projectMode && background != null) {
@@ -52,13 +53,14 @@ object SceneRenderer {
             val appearance = layer?.characterAppearance
             val layerX = layer?.transform?.x ?: actorX
             val layerY = layer?.transform?.y ?: actorY
-            val effectiveActorX = appearance?.actorX ?: layerX
-            val effectiveActorY = appearance?.actorY ?: layerY
+            val effectiveActorX = if (layer != null) 0.5f else (appearance?.actorX ?: layerX)
+            val effectiveActorY = if (layer != null) 0.5f else (appearance?.actorY ?: layerY)
             val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f
-            val effectiveAvatarMode = if (appearance != null) appearance.enabled else avatarMode
+            val hasProjectCharacterLayer = layer != null
+            val effectiveAvatarMode = hasProjectCharacterLayer || (appearance?.enabled ?: avatarMode)
             val effectiveAvatarSpec = appearance?.let {
                 AvatarSpec(it.name, it.skin, it.hair, it.hairStyle, it.shirt, it.pants, it.shoes, it.beard)
-            } ?: avatarSpec
+            } ?: avatarSpec ?: if (hasProjectCharacterLayer) Avatars.presets().firstOrNull() else null
             val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
 
             canvas.save()
@@ -75,9 +77,12 @@ object SceneRenderer {
                 val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
                 val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
-                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, avatarFace, effectiveDirection)
-            } else {
+                val persistedFace = appearance?.faceAssetPath?.let { assetPath -> assetResolver?.invoke(assetPath) }
+                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, persistedFace ?: avatarFace, effectiveDirection)
+            } else if (!hasProjectCharacterLayer) {
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
+            } else {
+                throw IllegalStateException("CHARACTER_AVATAR_SPEC_MISSING: no hay una apariencia PNG disponible")
             }
 
             if (drawSkeleton && layer == null) {

@@ -63,6 +63,12 @@ jobs:
           else
             echo "face_landmarker.task: ${FZ} bytes"
           fi
+      - name: Generate and validate original avatar PNG bank
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow==10.4.0
+          python3 tools/generate_avatar_assets.py
+          test "$(find app/src/main/assets/pieces/ritmo -maxdepth 1 -name '*.png' | wc -l)" -eq 10
+          python3 -c "import json; p=json.load(open('app/src/main/assets/pieces/ritmo/manifest.json')); assert len(p['pieces']) == 10"
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Run tests and build debug APK

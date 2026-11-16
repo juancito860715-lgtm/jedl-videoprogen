@@ -181,8 +181,8 @@ class MainActivity : ComponentActivity() {
         ttsManager = TtsManager(this)
         projectRepository = ProjectRepository(this)
         projectAssetStore = ProjectAssetStore(this)
-        // Optional modular character pack; absent assets keep the vector avatar active.
-        CharacterLayerLibrary.init(applicationContext)
+        // F3: banco PNG requerido y validado antes de permitir preview/export.
+        PieceLibrary.init(applicationContext)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
@@ -867,7 +867,7 @@ class MainActivity : ComponentActivity() {
                     avatarMode = true
                     showExportBtn = true
                     statusMsg = "Cara recortada con IA (" + ms + " ms)"
-                    drawPreview()
+                    persistFaceToProject(face)
                 } else {
                     statusMsg = "IA de cara no lista: ajustá la elipse con el dedo"
                     faceEditMode = true
@@ -898,8 +898,8 @@ class MainActivity : ComponentActivity() {
                 avatarMode = true
                 showExportBtn = true
                 faceEditMode = false
-                statusMsg = "Cara recortada · el personaje ya la lleva puesta"
-                drawPreview()
+                statusMsg = "Cara recortada · guardando vínculo con el personaje"
+                if (face != null) persistFaceToProject(face) else drawPreview()
             }
         }.start()
     }
@@ -1256,23 +1256,51 @@ class MainActivity : ComponentActivity() {
 
     // ---------- CARGA DE FOTOS ----------
     private fun loadPhoto(uri: Uri) {
-        statusMsg = "Cargando foto..."
+        statusMsg = "Cargando foto y guardándola en el proyecto..."
         Thread {
             val bitmap = decodeScaled(uri, 1600)
             if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            val newMesh = SkinnedMesh(bitmap)
-            runOnUiThread {
-                pushUndo()
-                // Liberar los bitmaps anteriores (TAREA 5: recycle)
-                if (photo !== originalPhoto) safeRecycle(photo)
-                safeRecycle(originalPhoto)
-                photo = bitmap
-                originalPhoto = bitmap
-                mesh = newMesh
-                animProgress = 0f
-                showExportBtn = true
-                statusMsg = "Foto cargada · se dobla con el muñeco"
-                drawPreview()
+            try {
+                val project = activeProject ?: projectRepository.save(ProjectRepository.newProject("Mi proyecto"))
+                val bytes = java.io.ByteArrayOutputStream().use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) throw java.io.IOException("No se pudo codificar la foto")
+                    output.toByteArray()
+                }
+                val imported = projectAssetStore.importAsset(
+                    project.id, java.io.ByteArrayInputStream(bytes), "photo.png"
+                )
+                val scene = project.scenes.first()
+                // La foto principal va detrás del personaje; una nueva importación
+                // reemplaza la capa principal anterior sin tocar otras imágenes.
+                val retainedLayers = scene.layers.filterNot {
+                    it.type == LayerType.IMAGE && it.name == "Foto principal"
+                }
+                val imageLayer = LayerDocument(
+                    name = "Foto principal",
+                    type = LayerType.IMAGE,
+                    assetPath = imported.relativePath,
+                    zIndex = (retainedLayers.minOfOrNull { it.zIndex } ?: 0) - 1
+                )
+                val saved = projectRepository.save(project.copy(
+                    scenes = listOf(scene.copy(layers = retainedLayers + imageLayer)) + project.scenes.drop(1)
+                ))
+                val newMesh = SkinnedMesh(bitmap)
+                runOnUiThread {
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    safeRecycle(originalPhoto)
+                    photo = bitmap
+                    originalPhoto = bitmap
+                    mesh = newMesh
+                    activeProject = saved
+                    animProgress = 0f
+                    showExportBtn = true
+                    statusMsg = "Foto importada como capa IMAGE y guardada en el proyecto"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                safeRecycle(bitmap)
+                runOnUiThread { statusMsg = "No se pudo guardar la foto: " + (error.message ?: "error") }
             }
         }.start()
     }
@@ -1812,8 +1840,47 @@ class MainActivity : ComponentActivity() {
         enabled = avatarMode,
         direction = direction,
         actorX = actorX,
-        actorY = actorY
+        actorY = actorY,
+        faceAssetPath = activeProject?.scenes?.firstOrNull()?.layers
+            ?.firstOrNull { it.type == LayerType.CHARACTER }?.characterAppearance?.faceAssetPath
     )
+
+    /** Persiste el recorte facial como asset del proyecto y lo vincula al personaje. */
+    private fun persistFaceToProject(face: Bitmap) {
+        Thread {
+            try {
+                var project = activeProject ?: projectRepository.save(ProjectRepository.newProject("Mi proyecto"))
+                val bytes = java.io.ByteArrayOutputStream().use { output ->
+                    if (!face.compress(Bitmap.CompressFormat.PNG, 100, output)) throw java.io.IOException("No se pudo codificar la cara")
+                    output.toByteArray()
+                }
+                val imported = projectAssetStore.importAsset(
+                    project.id, java.io.ByteArrayInputStream(bytes), "character-face.png"
+                )
+                val scene = project.scenes.first()
+                val existing = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
+                val appearance = currentCharacterAppearance().copy(faceAssetPath = imported.relativePath)
+                val character = (existing ?: LayerDocument(name = avatarSpec.name, type = LayerType.CHARACTER)).copy(
+                    name = avatarSpec.name,
+                    characterAppearance = appearance,
+                    transform = Transform2D(x = actorX, y = actorY)
+                )
+                val layers = if (existing == null) scene.layers + character
+                    else scene.layers.map { if (it.id == existing.id) character else it }
+                project = projectRepository.save(project.copy(
+                    scenes = listOf(scene.copy(layers = layers)) + project.scenes.drop(1)
+                ))
+                runOnUiThread {
+                    activeProject = project
+                    faceFromPhoto = true
+                    statusMsg = "Cara guardada en el personaje y vinculada al hueso head"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                runOnUiThread { statusMsg = "La cara se recortó, pero no pudo persistirse: " + (error.message ?: "error") }
+            }
+        }.start()
+    }
 
     private fun persistCharacterAppearance() {
         val project = activeProject ?: run {
@@ -1891,6 +1958,7 @@ class MainActivity : ComponentActivity() {
             direction = appearance.direction
             actorX = appearance.actorX
             actorY = appearance.actorY
+            faceFromPhoto = appearance.faceAssetPath != null
         }
         val characterClips = character?.let { target -> scene.animationClips.filter { it.targetLayerId == target.id } }.orEmpty()
         val clip = characterClips.firstOrNull { it.id == preferredClipId }
@@ -1952,9 +2020,6 @@ class MainActivity : ComponentActivity() {
         val photoLayer = layers
             .filter { it.type == LayerType.IMAGE || it.type == LayerType.BACKGROUND }
             .maxByOrNull { it.zIndex }
-        val characterLayerActive = layers.any {
-            it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime)
-        }
         val sourcePhoto = originalPhoto ?: photo
         val face = faceBitmap
         val snapshot = DeveloperDiagnosticsSnapshot(
@@ -1974,12 +2039,19 @@ class MainActivity : ComponentActivity() {
             faceBitmapValid = face != null && !face.isRecycled && face.width > 0 && face.height > 0,
             faceBitmapWidth = face?.takeUnless { it.isRecycled }?.width,
             faceBitmapHeight = face?.takeUnless { it.isRecycled }?.height,
-            facePassedToAvatarRenderer = faceFromPhoto && avatarMode &&
-                face != null && !face.isRecycled && characterLayerActive,
+            facePassedToAvatarRenderer = AvatarRenderer.lastFaceBitmapProvided,
             pieceLibraryInitialized = PieceLibrary.isInitialized(),
             pieceManifestFound = PieceLibrary.hasBitmapPieces(),
             pngPiecesAvailable = PieceLibrary.declaredPngFilesAvailable(),
+            characterLayerLibraryInitialized = CharacterLayerLibrary.isInitialized(),
+            characterManifestSource = CharacterLayerLibrary.manifestSource(),
+            builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
+            characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
             avatarRenderPath = AvatarRenderer.lastRenderPath,
+            characterAppearanceEnabled = layers.firstOrNull { it.type == LayerType.CHARACTER }?.characterAppearance?.enabled,
+            layerVisible = layers.firstOrNull { it.type == LayerType.CHARACTER }?.visible,
+            posX = layers.firstOrNull { it.type == LayerType.CHARACTER }?.transform?.x,
+            posY = layers.firstOrNull { it.type == LayerType.CHARACTER }?.transform?.y,
             layers = layers.map {
                 DeveloperLayerSnapshot(
                     id = it.id,

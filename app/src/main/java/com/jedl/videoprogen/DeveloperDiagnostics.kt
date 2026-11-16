@@ -31,10 +31,19 @@ data class DeveloperDiagnosticsSnapshot(
     val faceBitmapWidth: Int? = null,
     val faceBitmapHeight: Int? = null,
     val facePassedToAvatarRenderer: Boolean = false,
+    // Legacy PNG bank (assets/pieces/) is kept separate from the active modular bank.
     val pieceLibraryInitialized: Boolean = false,
     val pieceManifestFound: Boolean = false,
     val pngPiecesAvailable: Boolean = false,
-    val avatarRenderPath: String = "VECTOR_FALLBACK",
+    val characterLayerLibraryInitialized: Boolean = false,
+    val characterManifestSource: String = "NOT_INITIALIZED",
+    val builtinVectorPartsAvailable: Boolean = false,
+    val characterPngAssetsAvailable: Boolean = false,
+    val avatarRenderPath: String = "NOT_RENDERED",
+    val characterAppearanceEnabled: Boolean? = null,
+    val layerVisible: Boolean? = null,
+    val posX: Float? = null,
+    val posY: Float? = null,
     val layers: List<DeveloperLayerSnapshot> = emptyList()
 ) {
     fun toJson(): String {
@@ -65,7 +74,15 @@ data class DeveloperDiagnosticsSnapshot(
             .put("pieceLibraryInitialized", pieceLibraryInitialized)
             .put("pieceManifestFound", pieceManifestFound)
             .put("pngPiecesAvailable", pngPiecesAvailable)
+            .put("characterLayerLibraryInitialized", characterLayerLibraryInitialized)
+            .put("characterManifestSource", characterManifestSource)
+            .put("builtinVectorPartsAvailable", builtinVectorPartsAvailable)
+            .put("characterPngAssetsAvailable", characterPngAssetsAvailable)
             .put("renderPath", avatarRenderPath)
+            .putNullable("characterAppearanceEnabled", characterAppearanceEnabled)
+            .putNullable("layerVisible", layerVisible)
+            .putNullable("posX", posX)
+            .putNullable("posY", posY)
 
         val layerArray = JSONArray()
         layers.sortedBy { it.zIndex }.forEach { layer ->

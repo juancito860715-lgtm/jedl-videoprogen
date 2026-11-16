@@ -50,6 +50,15 @@ object AvatarRenderer {
     @Volatile var lastRenderPath: String = "NOT_RENDERED"
         private set
 
+    @Volatile var lastFaceBitmapProvided: Boolean = false
+        private set
+
+    /** Reset frame-scoped diagnostics before each preview/export render. */
+    fun beginFrame() {
+        lastRenderPath = "NOT_RENDERED"
+        lastFaceBitmapProvided = false
+    }
+
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
         val r = ((argb ushr 16) and 0xFF) * 3 / 4
@@ -63,25 +72,23 @@ object AvatarRenderer {
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
+        lastFaceBitmapProvided = face != null && !face.isRecycled &&
+            face.width > 0 && face.height > 0
         if (DEBUG_RECTS) {
             lastRenderPath = "DEBUG_RECTS"
             drawDebugRects(canvas, solved)
             return
         }
 
-        // El banco modular (si existe) tiene prioridad; sin manifest/PNG válidos
-        // se conserva intacto el renderer vectorial de compatibilidad.
-        if (CharacterLayerLibrary.draw(canvas, solved, appearanceFor(spec))) {
-            lastRenderPath = "MODULAR_LAYERS"
-            return
+        // F3: ruta PNG obligatoria. No existe fallback visual silencioso.
+        check(PieceLibrary.isInitialized()) {
+            "PNG_PIECES_REQUIRED: PieceLibrary debe inicializarse antes del render"
         }
-
-        // Registrar la ruta realmente ejecutada, no solo la disponibilidad del manifest.
-        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) {
-            lastRenderPath = "PNG_PIECES"
-            return
+        check(drawBitmapPieces(canvas, solved, spec, face)) {
+            "PNG_PIECES_REQUIRED: faltan piezas o poses del rig; render abortado"
         }
-        lastRenderPath = "VECTOR_FALLBACK"
+        lastRenderPath = "PNG_PIECES"
+        return
 
         // Piezas vectoriales del estilo base. El orden procede del contrato compartido.
         for (name in AvatarRenderOrder.backToFront) {
@@ -95,9 +102,6 @@ object AvatarRenderer {
             }
         }
     }
-
-    private fun appearanceFor(spec: AvatarSpec): CharacterLayerAppearance =
-        CharacterLayerAppearance.fromAvatarSpec(spec)
 
     private inline fun bone(
         canvas: Canvas, solved: Map<String, BonePose>,
@@ -345,7 +349,7 @@ object AvatarRenderer {
     // ---------- PIEZAS PNG DEL BANCO (F2+: manifest congelado de PieceSet) ----------
 
     private fun drawBitmapPieces(
-        canvas: Canvas, solved: Map<String, BonePose>, spec: AvatarSpec
+        canvas: Canvas, solved: Map<String, BonePose>, spec: AvatarSpec, face: Bitmap?
     ): Boolean {
         for (b in AvatarRenderOrder.backToFront) {
             val def = PieceLibrary.piece(b) ?: return false
@@ -360,6 +364,33 @@ object AvatarRenderer {
             p.colorFilter = tintFilter(spec, def.tint)
             canvas.drawBitmap(bmp, mTmp, p)
             p.colorFilter = null
+            canvas.restoreToCount(save)
+        }
+
+        // La cara recortada se monta dentro del rectángulo facial declarado
+        // por el manifiesto, en el mismo espacio local del hueso head.
+        if (face != null && !face.isRecycled) {
+            val headDef = PieceLibrary.piece("head") ?: return false
+            val headBitmap = PieceLibrary.bitmap(headDef) ?: return false
+            val headPose = solved["head"] ?: return false
+            val faceRect = PieceLibrary.manifest()?.faceRect ?: return false
+            val scale = headDef.widthUnits / headBitmap.width.toFloat()
+            val imageMatrix = Matrix().apply {
+                postTranslate(-headDef.pivotX, -headDef.pivotY)
+                postScale(scale, scale)
+            }
+            val rect = RectF(
+                faceRect.x * headBitmap.width,
+                faceRect.y * headBitmap.height,
+                (faceRect.x + faceRect.w) * headBitmap.width,
+                (faceRect.y + faceRect.h) * headBitmap.height
+            )
+            val save = canvas.save()
+            canvas.concat(headPose.matrix)
+            canvas.concat(imageMatrix)
+            canvas.clipPath(Path().apply { addOval(rect, Path.Direction.CCW) })
+            p.colorFilter = null
+            canvas.drawBitmap(face, null, rect, p)
             canvas.restoreToCount(save)
         }
         return true
