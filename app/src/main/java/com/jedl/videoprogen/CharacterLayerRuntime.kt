@@ -252,24 +252,63 @@ object CharacterLayerLibrary {
     private const val ASSET_DIR = "characters/jedl_master_v1"
     @Volatile private var appContext: Context? = null
     @Volatile private var manifest: CharacterLayerManifest? = null
+    @Volatile private var manifestSource: String = "NOT_INITIALIZED"
     private val bitmaps = LinkedHashMap<String, Bitmap>()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
     @Synchronized fun init(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
-        manifest = try {
+        val loaded = try {
             val json = context.assets.open("$ASSET_DIR/manifest.json")
                 .bufferedReader().use { it.readText() }
             CharacterLayerContract.parse(json)?.takeIf {
                 CharacterLayerContract.validate(it).isValid
-            } ?: CharacterLayerContract.starterManifest()
+            }
         } catch (_: Exception) {
-            CharacterLayerContract.starterManifest()
+            null
+        }
+        if (loaded != null) {
+            manifest = loaded
+            manifestSource = "ASSET_MANIFEST"
+        } else {
+            manifest = CharacterLayerContract.starterManifest()
+            manifestSource = "BUILTIN_FALLBACK"
         }
     }
 
+    fun isInitialized(): Boolean = appContext != null
+
     fun isReady(): Boolean = manifest != null
+
+    fun manifestSource(): String = manifestSource
+
+    fun builtinVectorPartsAvailable(): Boolean {
+        val current = manifest ?: return false
+        val builtinParts = current.parts.filter { it.file.startsWith("builtin://") }
+        return builtinParts.isNotEmpty() && builtinParts.all {
+            CharacterPartPainter.supportedPartIds.contains(it.file.removePrefix("builtin://"))
+        }
+    }
+
+    fun declaredPngAssetsAvailable(): Boolean {
+        val ctx = appContext ?: return false
+        val current = manifest ?: return false
+        val pngParts = current.parts.filterNot { it.file.startsWith("builtin://") }
+        return pngParts.isNotEmpty() && pngParts.all { part ->
+            try {
+                ctx.assets.open("$ASSET_DIR/${part.file}").use { true }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    fun builtinPartCount(): Int =
+        manifest?.parts?.count { it.file.startsWith("builtin://") } ?: 0
+
+    fun pngPartCount(): Int =
+        manifest?.parts?.count { !it.file.startsWith("builtin://") } ?: 0
 
     @Synchronized fun draw(
         canvas: Canvas,
@@ -346,5 +385,6 @@ object CharacterLayerLibrary {
         bitmaps.clear()
         manifest = null
         appContext = null
+        manifestSource = "NOT_INITIALIZED"
     }
 }
