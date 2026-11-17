@@ -129,6 +129,8 @@ class MainActivity : ComponentActivity() {
     // elipse manual con el dedo). El recorte pasa a ser SOLO CARA.
     private var faceFromPhoto by mutableStateOf(false)
     private var faceBitmap: Bitmap? = null
+    @Volatile private var lastFaceCutterExecuted: Boolean = false
+    @Volatile private var lastFaceCutterReturnedBitmap: Boolean? = null
     private var faceEditMode by mutableStateOf(false)   // colocar la elipse con el dedo
     private var faceCx by mutableStateOf(0.5f)          // centro en fracciones de la foto
     private var faceCy by mutableStateOf(0.35f)
@@ -167,6 +169,9 @@ class MainActivity : ComponentActivity() {
     }
     private val timelineMediaLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) importProjectMedia(uri, pendingTimelineType)
+    }
+    private val diagnosticsLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri != null) writeDeveloperDiagnostics(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -211,6 +216,11 @@ class MainActivity : ComponentActivity() {
                             }
                             TextButton(onClick = { showProjectSheet = true }) {
                                 Text("Proyectos", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                diagnosticsLauncher.launch("JEDL_DeveloperDiagnostics.json")
+                            }) {
+                                Text("Diagnóstico", color = Gold, fontSize = 12.sp)
                             }
                             TextButton(onClick = {
                                 if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
@@ -842,9 +852,12 @@ class MainActivity : ComponentActivity() {
         if (original == null) { statusMsg = "Cargá primero una foto con tu cara (botón Actor)"; return }
         showAvatarSheet = false
         statusMsg = "Buscando tu cara (IA)... esperá un momento"
+        lastFaceCutterExecuted = true
+        lastFaceCutterReturnedBitmap = null
         Thread {
             val t0 = SystemClock.elapsedRealtime()
             val face = FaceCutter.cutFaceAuto(this, original)
+            lastFaceCutterReturnedBitmap = face != null
             val ms = SystemClock.elapsedRealtime() - t0
             runOnUiThread {
                 if (face != null) {
@@ -874,8 +887,10 @@ class MainActivity : ComponentActivity() {
             return
         }
         statusMsg = "Recortando cara..."
+        lastFaceCutterExecuted = true
         Thread {
             val face = FaceCutter.cutFaceManual(original, faceCx, faceCy, faceR)
+            lastFaceCutterReturnedBitmap = face != null
             runOnUiThread {
                 safeRecycle(faceBitmap)
                 faceBitmap = face
@@ -1763,6 +1778,62 @@ class MainActivity : ComponentActivity() {
             activeProject?.id,
             activeProject?.frameRate ?: 30
         )
+    }
+
+    private fun writeDeveloperDiagnostics(uri: Uri) {
+        try {
+            val project = activeProject
+            val scene = project?.scenes?.firstOrNull()
+            val photoLayer = scene?.layers?.filter { it.type == LayerType.IMAGE }?.maxByOrNull { it.zIndex }
+            val characterLayer = scene?.layers?.firstOrNull { it.type == LayerType.CHARACTER }
+            val face = faceBitmap
+            val snapshot = DeveloperDiagnosticsSnapshot(
+                activeProjectPresent = project != null,
+                projectId = project?.id,
+                projectName = project?.name,
+                activeSceneId = scene?.id,
+                photoBitmapLoaded = photo?.let { !it.isRecycled } == true,
+                photoBitmapWidth = photo?.width,
+                photoBitmapHeight = photo?.height,
+                photoBitmapRecycled = photo?.isRecycled,
+                photoLayerPresent = photoLayer != null,
+                photoLayerZIndex = photoLayer?.zIndex,
+                photoAssetPath = photoLayer?.assetPath,
+                faceCutterExecuted = lastFaceCutterExecuted,
+                faceCutterReturnedBitmap = lastFaceCutterReturnedBitmap,
+                faceBitmapValid = face?.let { !it.isRecycled && it.width > 0 && it.height > 0 } == true,
+                faceBitmapWidth = face?.width,
+                faceBitmapHeight = face?.height,
+                facePassedToAvatarRenderer = AvatarRenderer.lastFaceProvided,
+                faceProvided = AvatarRenderer.lastFaceProvided,
+                faceMounted = AvatarRenderer.lastFaceMounted,
+                characterLayerLibraryInitialized = CharacterLayerLibrary.isInitialized(),
+                characterManifestSource = CharacterLayerLibrary.manifestSource(),
+                builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
+                characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
+                avatarRenderPath = AvatarRenderer.lastRenderPath,
+                characterAppearanceEnabled = characterLayer?.characterAppearance?.enabled,
+                layerVisible = characterLayer?.visible,
+                posX = characterLayer?.transform?.x,
+                posY = characterLayer?.transform?.y,
+                layersDrawn = SceneRenderDiagnostics.layersDrawn,
+                layersFailed = SceneRenderDiagnostics.layersFailed,
+                layers = scene?.layers.orEmpty().map { layer ->
+                    DeveloperLayerSnapshot(
+                        id = layer.id, name = layer.name, type = layer.type.name,
+                        zIndex = layer.zIndex, visible = layer.visible,
+                        activeAtCapture = ProjectLayerTiming.isActive(layer, 0L),
+                        assetPath = layer.assetPath
+                    )
+                }
+            )
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw java.io.IOException("No se pudo abrir el archivo de diagnóstico")
+            output.use { it.write(snapshot.toJson().toByteArray(Charsets.UTF_8)) }
+            Toast.makeText(this, "Diagnóstico JSON guardado", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, error.message ?: "No se pudo guardar el diagnóstico", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun resolveProjectBitmap(relativePath: String): Bitmap? {

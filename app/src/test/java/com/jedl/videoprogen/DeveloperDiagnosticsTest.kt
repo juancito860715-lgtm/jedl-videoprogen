@@ -83,4 +83,14 @@ class DeveloperDiagnosticsTest {
         assertEquals("MODULAR_LAYERS", avatar.getString("renderPath"))
     }
 
+
+    @Test fun jsonDistinguishesProvidedAndMountedFaceAndLayerFailures() {
+        val json = DeveloperDiagnosticsSnapshot(
+            faceProvided = true, faceMounted = false, layersDrawn = 2, layersFailed = 1
+        ).toJson()
+        assertTrue(json.contains("\"faceProvided\": true"))
+        assertTrue(json.contains("\"faceMounted\": false"))
+        assertTrue(json.contains("\"layersDrawn\": 2"))
+        assertTrue(json.contains("\"layersFailed\": 1"))
+    }
 }

@@ -31,6 +31,10 @@ data class DeveloperDiagnosticsSnapshot(
     val faceBitmapWidth: Int? = null,
     val faceBitmapHeight: Int? = null,
     val facePassedToAvatarRenderer: Boolean = false,
+    val faceProvided: Boolean = false,
+    val faceMounted: Boolean = false,
+    val layersDrawn: Int = 0,
+    val layersFailed: Int = 0,
     // Legacy PNG bank (assets/pieces/) is kept separate from the active modular bank.
     val pieceLibraryInitialized: Boolean = false,
     val pieceManifestFound: Boolean = false,
@@ -69,6 +73,8 @@ data class DeveloperDiagnosticsSnapshot(
             .putNullable("width", faceBitmapWidth)
             .putNullable("height", faceBitmapHeight)
             .put("passedToAvatarRenderer", facePassedToAvatarRenderer)
+            .put("faceProvided", faceProvided)
+            .put("faceMounted", faceMounted)
 
         val avatar = JSONObject()
             .put("pieceLibraryInitialized", pieceLibraryInitialized)
@@ -79,6 +85,8 @@ data class DeveloperDiagnosticsSnapshot(
             .put("builtinVectorPartsAvailable", builtinVectorPartsAvailable)
             .put("characterPngAssetsAvailable", characterPngAssetsAvailable)
             .put("renderPath", avatarRenderPath)
+            .put("layersDrawn", layersDrawn)
+            .put("layersFailed", layersFailed)
             .putNullable("characterAppearanceEnabled", characterAppearanceEnabled)
             .putNullable("layerVisible", layerVisible)
             .putNullable("posX", posX)
@@ -99,7 +107,7 @@ data class DeveloperDiagnosticsSnapshot(
         }
 
         return JSONObject()
-            .put("diagnosticVersion", "F2.3")
+            .put("diagnosticVersion", "F2.8")
             .put("project", project)
             .put("photo", photo)
             .put("face", face)
