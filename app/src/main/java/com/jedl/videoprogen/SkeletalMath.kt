@@ -96,11 +96,22 @@ object SkeletalMath {
         val rootTransform = matrix(SkeletalTransform2D(x = rootX, y = rootY))
         val resolved = LinkedHashMap<String, SkeletalBonePose>()
 
+        val names = HashSet<String>()
         for (bone in bones) {
+            require(bone.name.isNotBlank()) { "Bone names must not be blank" }
+            require(names.add(bone.name)) { "Duplicate bone name: ${bone.name}" }
             requireFinite(bone.length, bone.attachX, bone.attachY, bone.restDegrees)
+            require(bone.length >= 0f) { "Bone length must not be negative: ${bone.name}" }
             val localRotation = bone.restDegrees + (angles[bone.name] ?: 0f)
             requireFinite(localRotation)
-            val parentPose = bone.parent?.let { resolved[it] }
+            val parentPose = if (bone.parent == null) {
+                null
+            } else {
+                resolved[bone.parent]
+                    ?: throw IllegalArgumentException(
+                        "Parent '${bone.parent}' of '${bone.name}' must be declared before its child"
+                    )
+            }
             val localTransform = matrix(
                 SkeletalTransform2D(
                     x = bone.attachX,
