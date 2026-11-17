@@ -49,6 +49,9 @@ object SceneRenderer {
         }
         val drawActor: (LayerDocument?) -> Unit = { layer ->
             val appearance = layer?.characterAppearance
+            if (layer != null && appearance == null) {
+                Log.w("JEDL.SceneRenderer", "Character layer ${layer.id} has no appearance; using default avatar appearance")
+            }
             val layerX = layer?.transform?.x ?: actorX
             val layerY = layer?.transform?.y ?: actorY
             val effectiveActorX = appearance?.actorX ?: layerX

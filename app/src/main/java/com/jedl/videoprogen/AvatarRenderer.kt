@@ -95,7 +95,7 @@ object AvatarRenderer {
             return
         }
 
-        val reason = when {
+        val reason = modularFailureReason ?: when {
             !CharacterLayerLibrary.isInitialized() -> "CharacterLayerLibrary_NOT_INITIALIZED"
             !modularReady -> "CharacterLayerLibrary_MANIFEST_NOT_READY"
             else -> "CharacterLayerLibrary_DRAW_RETURNED_FALSE"
