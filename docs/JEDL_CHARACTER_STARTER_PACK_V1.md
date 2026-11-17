@@ -1,41 +1,31 @@
-# JEDL Character Master — starter pack v1
+# JEDL Character Master — original layered artwork v1
 
-Este paquete es la primera implementación funcional del prototipo modular. No pretende fijar el diseño artístico final: cada capa puede sustituirse sin cambiar el rig ni las plantillas de movimiento.
+La lámina de referencia recibida fija la dirección visual: personaje ilustrado 2D, contorno oscuro, volumen y sombreado cálido, gorra negra con emblema rojo abstracto, camiseta blanca con gráfica musical original, jeans azules y zapatillas blancas.
 
-## Integración
+## Pipeline de arte
 
-El recorrido de render es:
+- Fuente editable: `tools/character_art/generate_parts.py`.
+- El generador escribe un SVG independiente por ID en `tools/character_art/generated/`.
+- Cada SVG se rasteriza a PNG RGBA transparente de 256×256 en `app/src/main/assets/characters/jedl_master_v1/layers/`.
+- El manifiesto asigna cada PNG a un hueso, pivote normalizado, tamaño local, offset y orden Z.
+- CI valida transparencia, dimensiones, IDs únicos, cobertura de huesos y rutas individuales; publica los SVG y `avatar-preview.png` como artifact `character-art-preview`.
+- El PNG de preview es una composición de arte en pose neutra para inspección visual; la validación definitiva de matrices y articulaciones sigue correspondiendo al runtime del rig.
 
-`PuppetEngine.poseForActive()` → `PuppetRig.HUMANOID.solve()` → `AvatarRenderer.draw()` → `CharacterLayerLibrary.draw()` → `CharacterPartPainter`.
+## Conexión al rig
 
-La misma ruta se usa desde `SceneRenderer`, por lo que el personaje modular se dibuja en la vista previa y en los cuadros renderizados/exportados. Las piezas se transforman con la matriz mundial del hueso asignado.
+El flujo de ejecución permanece:
+`PuppetEngine.poseForActive()` → `PuppetRig.HUMANOID.solve()` → `AvatarRenderer.draw()` → `CharacterLayerLibrary.draw()`.
 
-## Banco inicial
+Cada PNG se dibuja usando la matriz mundial del hueso indicado por `boneId`. Los puntos de giro y dimensiones siguen expresados en el marco local normalizado; no se hornea la pose en el bitmap. La cara importada se monta sobre la capa `HEAD` en el marco normalizado de cabeza.
 
-- 39 capas predeterminadas que cubren los 10 huesos del rig.
-- Capas separadas para cabeza, orejas, ojos, cejas, nariz, boca, pelo, gorra, cuello, torso, pantalón, mangas, brazos, antebrazos, manos, muslos, espinillas, pies, zapatos, gafas, cadena, medalla, reloj, baquetas, tambor y soporte.
-- Variantes adicionales de pelo corto, afro y largo; ojos cerrados; boca neutra y abierta; barba opcional.
-- Orden Z explícito, pivotes normalizados, offsets y dimensiones por pieza.
-- La configuración existente de piel, pelo, camiseta, pantalón, zapatos, estilo de pelo y barba se conserva mediante `CharacterLayerAppearance.fromAvatarSpec()`.
+## Partes
 
-## Arte y sustitución
+El manifiesto mantiene piezas independientes para cabeza, orejas, ojos, cejas, nariz, boca, barba, pelo, gorra, cuello, torso/camiseta, pantalón, mangas, brazos, antebrazos, manos, muslos, espinillas, pies, zapatos, gafas, cadena, medalla, reloj, baquetas, tambor y soporte. Variantes de pelo, ojos y boca tienen PNG separados.
 
-Las piezas iniciales se dibujan como vectores independientes en `CharacterPartPainter.kt`. Esto evita cargar texturas grandes en el Redmi Note 10 y permite probar el rig sin esperar a la ilustración final.
+## Color y personalización
 
-Para reemplazar una pieza por arte propio:
-1. Añadir un PNG RGBA transparente dentro de `app/src/main/assets/characters/jedl_master_v1/`.
-2. Cambiar el `file` de la pieza en `manifest.json` a su ruta PNG relativa.
-3. Mantener `slot`, `boneId`, pivote, dimensiones y orden Z.
-4. Para cambiar de variante, seleccionar el id alternativo de ese mismo slot.
+Piel, pelo, camiseta, pantalón y calzado conservan sus canales de apariencia mediante `PorterDuff.Mode.MULTIPLY`; la gorra conserva el negro y el emblema rojo de la obra original, sin recibir el tinte de camiseta. El arte no depende de SRC_IN.
 
-El cargador comprueba el manifiesto y los archivos. Si falta una imagen o el manifiesto no es válido, conserva el renderer vectorial anterior como fallback; no deja el lienzo en blanco.
+## Límites de validación
 
-## Pruebas incluidas
-
-- Contrato, validación y parsing del manifiesto.
-- Cobertura de piezas dibujables.
-- Asignación de cada capa a un hueso existente.
-- Sustitución independiente de gorra, pelo y barba.
-- Movimiento de antebrazo y pierna calculado mediante el solver matemático puro, sin depender de los stubs de Android Matrix en pruebas JVM.
-
-La compilación/CI debe quedar verde antes de declarar esta subfase validada. La prueba final de rendimiento y aspecto requiere instalar el APK en el Redmi Note 10.
+La generación de SVG/PNG y el test JVM del manifiesto se consideran aprobados únicamente cuando el workflow completo termina en `success`. El preview no sustituye la prueba en Redmi Note 10: hay que comprobar alineación de articulaciones, continuidad en movimiento, memoria, montaje de cara y exportación MP4 en el dispositivo.
