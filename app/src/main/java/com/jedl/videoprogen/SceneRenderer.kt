@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.util.Log
 import kotlin.math.min
 
 // Motor compartido por preview y exportación.
@@ -23,6 +24,7 @@ object SceneRenderer {
         projectScene: SceneDocument? = null,
         assetResolver: ((String) -> Bitmap?)? = null
     ) {
+        SceneRenderDiagnostics.beginFrame()
         canvas.drawColor(projectScene?.backgroundColor ?: Color.BLACK)
         val projectMode = projectScene != null
         if (!projectMode && background != null) {
@@ -52,10 +54,10 @@ object SceneRenderer {
             val effectiveActorX = appearance?.actorX ?: layerX
             val effectiveActorY = appearance?.actorY ?: layerY
             val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f
-            val effectiveAvatarMode = if (appearance != null) appearance.enabled else avatarMode
+            val effectiveAvatarMode = if (layer != null) (appearance?.enabled ?: true) else (appearance?.enabled ?: avatarMode)
             val effectiveAvatarSpec = appearance?.let {
                 AvatarSpec(it.name, it.skin, it.hair, it.hairStyle, it.shirt, it.pants, it.shoes, it.beard)
-            } ?: avatarSpec
+            } ?: avatarSpec ?: if (layer != null) Avatars.presets().firstOrNull() else null
 
             // Cada capa de personaje puede tener un clip persistente distinto.
             // Si no tiene clip propio, conserva el movimiento activo del editor.
@@ -110,18 +112,27 @@ object SceneRenderer {
             }
             canvas.restore()
         }
-        if (!projectMode) drawActor(null)
+        if (!projectMode) {
+            try {
+                drawActor(null)
+                SceneRenderDiagnostics.complete("LEGACY_SCENE", 1, 0)
+            } catch (error: Exception) {
+                Log.w("JEDL.SceneRenderer", "Legacy actor render failed; continuing", error)
+                SceneRenderDiagnostics.complete("LEGACY_FALLBACK", 0, 1)
+            }
+        }
 
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
         } else {
             val scene = requireNotNull(projectScene)
-            SceneLayerRenderer.drawLayers(
+            val layerStats = SceneLayerRenderer.drawLayers(
                 canvas, w, h, scene.layers,
                 assetResolver ?: { null },
                 sceneTime,
                 characterRenderer = drawActor
             )
+            SceneRenderDiagnostics.complete("PROJECT_SCENE", layerStats.drawn, layerStats.failed)
             val timedText = scene.timelineTracks
                 .filter { !it.muted && it.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) }
                 .flatMap { it.clips }
