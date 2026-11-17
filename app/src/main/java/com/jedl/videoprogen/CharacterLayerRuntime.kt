@@ -367,9 +367,9 @@ object CharacterLayerLibrary {
                     paint.colorFilter = null
                 }
                 if (validFace && layer.slot == CharacterLayerSlot.HEAD) {
-                    val faceRect = FaceMountGeometry.mapToBoneLocal(
-                        left, top, layer.widthUnits, layer.heightUnits
-                    ) ?: return false
+                    // At this point the canvas is already in the normalized 0..1
+                    // head-art frame (after translate + scale for head_base).
+                    val faceRect = FaceMountGeometry.defaultFaceRect
                     canvas.drawBitmap(
                         face!!, null,
                         RectF(faceRect.left, faceRect.top, faceRect.right, faceRect.bottom),
