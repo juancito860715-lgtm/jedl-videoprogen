@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import cairosvg
 import xml.etree.ElementTree as ET
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "app/src/main/assets/characters/jedl_master_v1/manifest.json"
@@ -139,5 +140,11 @@ def main():
         root=ET.parse(svg_path).getroot()
         if root.attrib.get("viewBox")!="0 0 256 256": raise SystemExit(f"bad SVG viewBox: {pid}")
         if not png_path.exists() or png_path.stat().st_size < 100: raise SystemExit(f"missing/empty PNG: {pid}")
+        with Image.open(png_path) as image:
+            if image.mode != "RGBA" or image.size != (SIZE, SIZE):
+                raise SystemExit(f"invalid PNG mode/size for {pid}: {image.mode} {image.size}")
+            low, high = image.getchannel("A").getextrema()
+            if low == high or high == 0:
+                raise SystemExit(f"PNG must contain transparent and visible pixels: {pid}")
     print(f"Generated {len(seen)} original SVG layers and {len(seen)} transparent PNGs")
 if __name__=="__main__": main()
