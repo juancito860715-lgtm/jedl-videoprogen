@@ -63,6 +63,10 @@ jobs:
           else
             echo "face_landmarker.task: ${FZ} bytes"
           fi
+      - name: Generate and validate original rigged character artwork
+        run: |
+          python3 -m pip install --disable-pip-version-check cairosvg pillow
+          python3 tools/character_art/generate_parts.py
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Run tests and build debug APK
