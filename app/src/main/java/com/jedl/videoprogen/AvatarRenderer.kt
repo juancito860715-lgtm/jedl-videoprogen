@@ -78,6 +78,7 @@ object AvatarRenderer {
             return
         }
 
+        var modularFailureReason: String? = null
         val modularReady = CharacterLayerLibrary.isReady()
         val modularDrawn = if (modularReady) {
             try {
@@ -85,6 +86,7 @@ object AvatarRenderer {
                     canvas, solved, CharacterLayerAppearance.fromAvatarSpec(spec), face
                 )
             } catch (error: Exception) {
+                modularFailureReason = "DRAW_EXCEPTION:${error.javaClass.simpleName}:${error.message ?: "no_message"}"
                 Log.w("JEDL.AvatarRenderer", "Modular renderer failed; using vector fallback", error)
                 false
             }
