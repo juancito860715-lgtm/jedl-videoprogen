@@ -143,11 +143,12 @@ def make_preview():
     paste("torso_base",(256,226),(182,224))
     paste("neck",(256,113),(58,62))
     paste("ear_left",(197,95),(27,39)); paste("ear_right",(315,95),(27,39))
+    paste("hair_back",(256,60),(136,150))
     paste("head_base",(256,89),(136,166))
     paste("eyes_pair",(256,82),(91,69)); paste("brows_pair",(256,63),(91,52))
     paste("nose_small",(256,101),(32,48)); paste("mouth_smile",(256,128),(53,39))
     paste("beard_short",(256,126),(83,54))
-    paste("hair_back",(256,60),(136,150)); paste("hair_front",(256,65),(136,75))
+    paste("hair_front",(256,65),(136,75))
     paste("cap_front",(256,27),(150,78))
     out=ROOT/"app/build/character-art/avatar-preview.png"
     out.parent.mkdir(parents=True,exist_ok=True)
