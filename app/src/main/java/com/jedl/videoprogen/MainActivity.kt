@@ -1243,40 +1243,82 @@ class MainActivity : ComponentActivity() {
     private fun loadPhoto(uri: Uri) {
         statusMsg = "Cargando foto..."
         Thread {
-            val bitmap = decodeScaled(uri, 1600)
-            if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            val newMesh = SkinnedMesh(bitmap)
-            runOnUiThread {
-                pushUndo()
-                // Liberar los bitmaps anteriores (TAREA 5: recycle)
-                if (photo !== originalPhoto) safeRecycle(photo)
-                safeRecycle(originalPhoto)
-                photo = bitmap
-                originalPhoto = bitmap
-                mesh = newMesh
-                animProgress = 0f
-                showExportBtn = true
-                statusMsg = "Foto cargada · se dobla con el muñeco"
-                drawPreview()
+            try {
+                val bitmap = decodeScaled(uri, 1600)
+                    ?: throw java.io.IOException("No se pudo decodificar la foto")
+                val project = activeProject
+                    ?: projectRepository.save(ProjectRepository.newProject("Proyecto 1"))
+                val input = contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("No se pudo abrir la foto original")
+                val imported = input.use {
+                    projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "actor.jpg")
+                }
+                val scene = project.scenes.first()
+                val updatedScene = ProjectLayerInjection.injectAsset(
+                    scene, imported.relativePath, LayerType.IMAGE
+                )
+                val savedProject = projectRepository.save(project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(updatedScene) + project.scenes.drop(1)
+                ))
+                val newMesh = SkinnedMesh(bitmap)
+                runOnUiThread {
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    safeRecycle(originalPhoto)
+                    photo = bitmap
+                    originalPhoto = bitmap
+                    mesh = newMesh
+                    activeProject = savedProject
+                    avatarMode = true
+                    avatarSpec = Avatars.presets().first()
+                    animProgress = 0f
+                    showExportBtn = true
+                    statusMsg = "Foto importada como capa IMAGE bajo el personaje"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusMsg = error.message ?: "Error al importar la foto al proyecto"
+                    Toast.makeText(this, statusMsg, Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
 
     private fun loadBackground(uri: Uri) {
         Thread {
-            val bmp = decodeScaled(uri, 1280)
-            if (bmp != null) {
+            try {
+                val bmp = decodeScaled(uri, 1280)
+                    ?: throw java.io.IOException("No se pudo decodificar el fondo")
+                val project = activeProject
+                    ?: projectRepository.save(ProjectRepository.newProject("Proyecto 1"))
+                val input = contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("No se pudo abrir el fondo original")
+                val imported = input.use {
+                    projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "background.jpg")
+                }
+                val scene = project.scenes.first()
+                val updatedScene = ProjectLayerInjection.injectAsset(
+                    scene, imported.relativePath, LayerType.BACKGROUND
+                )
+                val savedProject = projectRepository.save(project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(updatedScene) + project.scenes.drop(1)
+                ))
                 runOnUiThread {
-                    // v0.5.1: el fondo también entra en deshacer/rehacer
-                    // (cambiar de fondo por descuido ya no lo pierde)
                     pushUndo()
                     safeRecycle(backgroundPhoto)
                     backgroundPhoto = bmp
-                    statusMsg = "Fondo cargado"
+                    activeProject = savedProject
+                    statusMsg = "Fondo importado como capa BACKGROUND"
                     drawPreview()
                 }
-            } else {
-                runOnUiThread { statusMsg = "Error al cargar fondo" }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusMsg = error.message ?: "Error al importar el fondo al proyecto"
+                    Toast.makeText(this, statusMsg, Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
