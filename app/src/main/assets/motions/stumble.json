@@ -1,1 +1,111 @@
-{"id":"stumble","label":"Tropiezo","durationMs":5000,"loop":false,"convention":"jedl","keyframes":[{"t":0,"bones":{"mixamorig:Spine":0,"mixamorig:Head":0,"mixamorig:LeftArm":0,"mixamorig:LeftForeArm":0,"mixamorig:RightArm":0,"mixamorig:RightForeArm":0,"mixamorig:LeftUpLeg":0,"mixamorig:LeftLeg":0,"mixamorig:RightUpLeg":0,"mixamorig:RightLeg":0},"bob":0,"sway":0},{"t":0.3,"bones":{"mixamorig:Spine":0,"mixamorig:Head":0,"mixamorig:LeftArm":0,"mixamorig:LeftForeArm":0,"mixamorig:RightArm":0,"mixamorig:RightForeArm":0,"mixamorig:LeftUpLeg":0,"mixamorig:LeftLeg":0,"mixamorig:RightUpLeg":0,"mixamorig:RightLeg":0},"bob":0,"sway":-0.01},{"t":0.55,"bones":{"mixamorig:Spine":0,"mixamorig:Head":0,"mixamorig:LeftArm":0,"mixamorig:LeftForeArm":0,"mixamorig:RightArm":0,"mixamorig:RightForeArm":0,"mixamorig:LeftUpLeg":0,"mixamorig:LeftLeg":0,"mixamorig:RightUpLeg":0,"mixamorig:RightLeg":0},"bob":0,"sway":-0.01},{"t":0.8,"bones":{"mixamorig:Spine":0,"mixamorig:Head":0,"mixamorig:LeftArm":0,"mixamorig:LeftForeArm":0,"mixamorig:RightArm":0,"mixamorig:RightForeArm":0,"mixamorig:LeftUpLeg":0,"mixamorig:LeftLeg":0,"mixamorig:RightUpLeg":0,"mixamorig:RightLeg":0},"bob":0,"sway":0},{"t":1,"bones":{"mixamorig:Spine":0,"mixamorig:Head":0,"mixamorig:LeftArm":0,"mixamorig:LeftForeArm":0,"mixamorig:RightArm":0,"mixamorig:RightForeArm":0,"mixamorig:LeftUpLeg":0,"mixamorig:LeftLeg":0,"mixamorig:RightUpLeg":0,"mixamorig:RightLeg":0},"bob":0,"sway":0}]}
+{
+  "id": "stumble",
+  "label": "Tropiezo",
+  "durationMs": 5000,
+  "loop": false,
+  "convention": "jedl",
+  "keyframes": [
+    {
+      "t": 0,
+      "bones": {
+        "mixamorig:Spine": 0,
+        "mixamorig:Head": 0,
+        "mixamorig:LeftArm": 0,
+        "mixamorig:LeftForeArm": 0,
+        "mixamorig:RightArm": 0,
+        "mixamorig:RightForeArm": 0,
+        "mixamorig:LeftUpLeg": 0,
+        "mixamorig:LeftLeg": 0,
+        "mixamorig:RightUpLeg": 0,
+        "mixamorig:RightLeg": 0
+      },
+      "bob": 0,
+      "sway": 0
+    },
+    {
+      "t": 0.16,
+      "bones": {
+        "mixamorig:Spine": 18,
+        "mixamorig:Head": -12,
+        "mixamorig:LeftArm": -35,
+        "mixamorig:LeftForeArm": -42,
+        "mixamorig:RightArm": 52,
+        "mixamorig:RightForeArm": 58,
+        "mixamorig:LeftUpLeg": 0,
+        "mixamorig:LeftLeg": 0,
+        "mixamorig:RightUpLeg": 0,
+        "mixamorig:RightLeg": 0
+      },
+      "bob": 0,
+      "sway": 0
+    },
+    {
+      "t": 0.36,
+      "bones": {
+        "mixamorig:Spine": 28,
+        "mixamorig:Head": -18,
+        "mixamorig:LeftArm": -70,
+        "mixamorig:LeftForeArm": -90,
+        "mixamorig:RightArm": 82,
+        "mixamorig:RightForeArm": 105,
+        "mixamorig:LeftUpLeg": -18,
+        "mixamorig:LeftLeg": -48,
+        "mixamorig:RightUpLeg": 22,
+        "mixamorig:RightLeg": -76
+      },
+      "bob": 0,
+      "sway": 0
+    },
+    {
+      "t": 0.58,
+      "bones": {
+        "mixamorig:Spine": 12,
+        "mixamorig:Head": -8,
+        "mixamorig:LeftArm": -40,
+        "mixamorig:LeftForeArm": -55,
+        "mixamorig:RightArm": 45,
+        "mixamorig:RightForeArm": 65,
+        "mixamorig:LeftUpLeg": -10,
+        "mixamorig:LeftLeg": -22,
+        "mixamorig:RightUpLeg": 12,
+        "mixamorig:RightLeg": -36
+      },
+      "bob": 0,
+      "sway": 0
+    },
+    {
+      "t": 0.8,
+      "bones": {
+        "mixamorig:Spine": 4,
+        "mixamorig:Head": -2,
+        "mixamorig:LeftArm": -12,
+        "mixamorig:LeftForeArm": 0,
+        "mixamorig:RightArm": 15,
+        "mixamorig:RightForeArm": 0,
+        "mixamorig:LeftUpLeg": 0,
+        "mixamorig:LeftLeg": 0,
+        "mixamorig:RightUpLeg": 0,
+        "mixamorig:RightLeg": 0
+      },
+      "bob": 0,
+      "sway": 0
+    },
+    {
+      "t": 1,
+      "bones": {
+        "mixamorig:Spine": 0,
+        "mixamorig:Head": 0,
+        "mixamorig:LeftArm": 0,
+        "mixamorig:LeftForeArm": 0,
+        "mixamorig:RightArm": 0,
+        "mixamorig:RightForeArm": 0,
+        "mixamorig:LeftUpLeg": 0,
+        "mixamorig:LeftLeg": 0,
+        "mixamorig:RightUpLeg": 0,
+        "mixamorig:RightLeg": 0
+      },
+      "bob": 0,
+      "sway": 0
+    }
+  ]
+}

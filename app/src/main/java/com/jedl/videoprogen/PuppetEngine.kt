@@ -461,7 +461,7 @@ object PuppetEngine {
         }
     }
 
-    private fun clampJoint(bone: String, a: Float): Float {
+    internal fun clampJoint(bone: String, a: Float): Float {
         val range = jointRange(bone)
         return a.coerceIn(range.first, range.second)
     }
