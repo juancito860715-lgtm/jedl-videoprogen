@@ -128,7 +128,7 @@ object SceneRenderer {
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
         } else {
-            val scene = requireNotNull(projectScene)
+            val scene = projectScene ?: return
             val layerStats = SceneLayerRenderer.drawLayers(
                 canvas, w, h, scene.layers,
                 assetResolver ?: { null },
