@@ -45,7 +45,7 @@ object AvatarRenderer {
     // (si el torso rota, cabeza y brazos DEBEN seguir pegados).
     // Al aprobar la Misión 1: poner en false (no borrar nada más).
     // ============================================================
-    private const val DEBUG_RECTS = true
+    private const val DEBUG_RECTS = false
 
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
@@ -60,24 +60,25 @@ object AvatarRenderer {
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
-        // v0.8.1 DIAGNÓSTICO (Misión 1): rectángulos sólidos por hueso.
-        // PENDIENTE DE APROBACIÓN EN EL REDMI. Al aprobar: DEBUG_RECTS = false.
-        if (DEBUG_RECTS) { drawDebugRects(canvas, solved); return }
+        if (DEBUG_RECTS) {
+            drawDebugRects(canvas, solved)
+            return
+        }
 
         // Piezas PNG del banco (F2+): si hay manifest, mandan.
         if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) return
 
-        // Piezas vectoriales del estilo base F1 (validadas visualmente).
-        bone(canvas, solved, "armUR") { upperArm(it, spec) }
-        bone(canvas, solved, "foreArmR") { foreArm(it, spec) }
-        bone(canvas, solved, "thighR") { thigh(it, spec) }
-        bone(canvas, solved, "shinR") { c -> shin(c, spec) }
-        bone(canvas, solved, "torso") { torso(it, spec) }
-        bone(canvas, solved, "thighL") { thigh(it, spec) }
-        bone(canvas, solved, "shinL") { c -> shin(c, spec) }
-        bone(canvas, solved, "head") { c -> head(c, spec, face, direction) }
-        bone(canvas, solved, "armUL") { upperArm(it, spec) }
-        bone(canvas, solved, "foreArmL") { foreArm(it, spec) }
+        // Piezas vectoriales del estilo base. El orden procede del contrato compartido.
+        for (name in AvatarRenderOrder.backToFront) {
+            when (name) {
+                "armUR", "armUL" -> bone(canvas, solved, name) { upperArm(it, spec) }
+                "foreArmR", "foreArmL" -> bone(canvas, solved, name) { foreArm(it, spec) }
+                "thighR", "thighL" -> bone(canvas, solved, name) { thigh(it, spec) }
+                "shinR", "shinL" -> bone(canvas, solved, name) { shin(it, spec) }
+                "torso" -> bone(canvas, solved, name) { torso(it, spec) }
+                "head" -> bone(canvas, solved, name) { head(it, spec, face, direction) }
+            }
+        }
     }
 
     private inline fun bone(
@@ -97,11 +98,7 @@ object AvatarRenderer {
     // para que los hombros del rig (±0.10) caigan DENTRO del rojo y se vea
     // que los brazos cuelgan de él. Orden de dibujo = el de las piezas F1.
     private fun drawDebugRects(canvas: Canvas, solved: Map<String, BonePose>) {
-        val order = arrayOf(
-            "armUR", "foreArmR", "thighR", "shinR", "torso",
-            "thighL", "shinL", "head", "armUL", "foreArmL"
-        )
-        for (name in order) {
+        for (name in AvatarRenderOrder.backToFront) {
             val bp = solved[name] ?: continue
             val save = canvas.save()
             canvas.concat(bp.matrix)   // espacio local del hueso (pivote = articulación)
@@ -332,11 +329,7 @@ object AvatarRenderer {
     private fun drawBitmapPieces(
         canvas: Canvas, solved: Map<String, BonePose>, spec: AvatarSpec
     ): Boolean {
-        val order = listOf(
-            "armUR", "foreArmR", "thighR", "shinR", "torso",
-            "thighL", "shinL", "head", "armUL", "foreArmL"
-        )
-        for (b in order) {
+        for (b in AvatarRenderOrder.backToFront) {
             val def = PieceLibrary.piece(b) ?: return false
             val bmp = PieceLibrary.bitmap(def) ?: return false
             val bp = solved[b] ?: return false

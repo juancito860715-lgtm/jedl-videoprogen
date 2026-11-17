@@ -34,17 +34,21 @@ object SceneLayerRenderer {
         if (canvasWidth <= 0 || canvasHeight <= 0 || layers.isEmpty() || sceneTimeMillis < 0L) return
         val imagePaint = requireNotNull(bitmapPaint.get())
         val captionPaint = requireNotNull(textPaint.get())
-        layers.asSequence()
-            .filter { ProjectLayerTiming.isActive(it, sceneTimeMillis) }
-            .sortedBy { it.zIndex }
-            .forEach { layer ->
+        for (layer in layers.sortedBy { it.zIndex }) {
+                if (!layer.visible) continue
+                if (!ProjectLayerTiming.isActive(layer, sceneTimeMillis)) continue
                 val save = canvas.save()
                 if (layer.type == LayerType.CHARACTER && characterRenderer != null) {
                     canvas.saveLayerAlpha(null, (layer.opacity * 255f).toInt().coerceIn(0, 255))
                 }
-                canvas.translate(canvasWidth * layer.transform.x, canvasHeight * layer.transform.y)
+                val isCharacter = layer.type == LayerType.CHARACTER
+                val layerX = if (isCharacter) 0.5f else layer.transform.x
+                val layerY = if (isCharacter) 0.5f else layer.transform.y
+                val scaleX = if (isCharacter) layer.transform.scaleX.coerceIn(0.25f, 1.25f) else layer.transform.scaleX
+                val scaleY = if (isCharacter) layer.transform.scaleY.coerceIn(0.25f, 1.25f) else layer.transform.scaleY
+                canvas.translate(canvasWidth * layerX, canvasHeight * layerY)
                 canvas.rotate(layer.transform.rotationDegrees)
-                canvas.scale(layer.transform.scaleX, layer.transform.scaleY)
+                canvas.scale(scaleX, scaleY)
                 when (layer.type) {
                     LayerType.IMAGE, LayerType.BACKGROUND -> {
                         val bitmap = layer.assetPath?.let(assetResolver)
@@ -89,6 +93,6 @@ object SceneLayerRenderer {
                     LayerType.VIDEO, LayerType.AUDIO -> Unit
                 }
                 canvas.restoreToCount(save)
-            }
+        }
     }
 }
