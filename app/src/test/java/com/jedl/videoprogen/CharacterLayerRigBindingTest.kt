@@ -25,19 +25,19 @@ class CharacterLayerRigBindingTest {
 
     private fun solveRigTips(angles: Map<String, Float>): Map<String, Vec2> {
         val bones = PuppetRig.HUMANOID.bones
-        val nodes = bones.map { bone ->
-            SkeletalBoneNode(
+        val definitions = bones.map { bone ->
+            SkeletalBoneDefinition(
                 name = bone.name,
                 parent = bone.parent,
+                length = bone.length,
                 attachX = bone.attachX,
                 attachY = bone.attachY,
-                restDegrees = bone.restDeg,
-                animationDegrees = angles[bone.name] ?: 0f
+                restDegrees = bone.restDeg
             )
         }
-        val world = SkeletalHierarchySolver.solve(nodes, 0f, 0f)
+        val resolved = SkeletalMath.resolveHierarchy(definitions, angles)
         return bones.associate { bone ->
-            bone.name to world.getValue(bone.name).matrix.map(Vec2(0f, bone.length))
+            bone.name to resolved.getValue(bone.name).tip
         }
     }
 
