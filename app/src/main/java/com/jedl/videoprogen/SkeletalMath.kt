@@ -26,6 +26,23 @@ data class Affine2D(
         m00 * point.x + m01 * point.y + m02,
         m10 * point.x + m11 * point.y + m12
     )
+
+    /** Copies this affine transform into Android Matrix.setValues() row-major layout. */
+    fun copyToAndroidMatrixValues(destination: FloatArray) {
+        require(destination.size >= 9) { "Android Matrix values require at least 9 floats" }
+        destination[0] = m00
+        destination[1] = m01
+        destination[2] = m02
+        destination[3] = m10
+        destination[4] = m11
+        destination[5] = m12
+        destination[6] = 0f
+        destination[7] = 0f
+        destination[8] = 1f
+    }
+
+    fun toAndroidMatrixValues(): FloatArray =
+        FloatArray(9).also(::copyToAndroidMatrixValues)
 }
 
 data class TwoBoneSolution(val joint: Vec2, val end: Vec2, val reachedTarget: Boolean)
