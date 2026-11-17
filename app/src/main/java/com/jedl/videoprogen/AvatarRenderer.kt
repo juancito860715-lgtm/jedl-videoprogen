@@ -79,9 +79,16 @@ object AvatarRenderer {
         }
 
         val modularReady = CharacterLayerLibrary.isReady()
-        val modularDrawn = modularReady && CharacterLayerLibrary.draw(
-            canvas, solved, CharacterLayerAppearance.fromAvatarSpec(spec), face
-        )
+        val modularDrawn = if (modularReady) {
+            try {
+                CharacterLayerLibrary.draw(
+                    canvas, solved, CharacterLayerAppearance.fromAvatarSpec(spec), face
+                )
+            } catch (error: Exception) {
+                Log.w("JEDL.AvatarRenderer", "Modular renderer failed; using vector fallback", error)
+                false
+            }
+        } else false
         if (modularDrawn) {
             lastRenderPath = "MODULAR_LAYERS"
             lastFaceMounted = CharacterLayerLibrary.lastFaceMounted()

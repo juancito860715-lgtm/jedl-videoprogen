@@ -332,6 +332,10 @@ object CharacterLayerLibrary {
         val layers = CharacterLayerContract.resolve(current, appearance)
             .filterNot { validFace && it.slot in facialSlots }
         if (layers.isEmpty() || layers.any { solved[it.boneId] == null }) return false
+        if (layers.any { layer ->
+                layer.file.startsWith("builtin://") &&
+                    layer.file.removePrefix("builtin://") !in CharacterPartPainter.supportedPartIds
+            }) return false
         val prepared = layers.map { layer ->
             if (layer.file.startsWith("builtin://")) layer to null
             else layer to (bitmapFor(ctx, layer.file) ?: return false)
