@@ -81,12 +81,7 @@ class Skeleton(val bones: List<Bone>) {
         for (bone in bones) {
             val pose = resolved[bone.name] ?: continue
             val transform = pose.transform
-            matrixValues[0] = transform.m00
-            matrixValues[1] = transform.m01
-            matrixValues[2] = transform.m02
-            matrixValues[3] = transform.m10
-            matrixValues[4] = transform.m11
-            matrixValues[5] = transform.m12
+            transform.copyToAndroidMatrixValues(matrixValues)
 
             val matrix = Matrix()
             matrix.setValues(matrixValues)
