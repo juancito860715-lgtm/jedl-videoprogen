@@ -124,6 +124,36 @@ def artwork(pid):
         return svg(line(128,24,128,190,"url(#metal)",15)+line(128,190,49,239,"#555d68",12)+line(128,190,207,239,"#555d68",12)+line(128,190,128,245,"#555d68",12))
     raise ValueError(f"No original SVG artwork mapping for {pid}")
 
+
+def make_preview():
+    # Neutral standing art board assembled from the exact exported rig pieces.
+    canvas=Image.new("RGBA",(512,640),(0,0,0,0))
+    def paste(pid, center, size, angle=0):
+        image=Image.open(PNG_DIR/(pid+".png")).convert("RGBA").resize(size,Image.Resampling.LANCZOS)
+        if angle:
+            image=image.rotate(angle,resample=Image.Resampling.BICUBIC,expand=True)
+        canvas.alpha_composite(image,(int(center[0]-image.width/2),int(center[1]-image.height/2)))
+    paste("thigh_l",(211,386),(82,168),-3); paste("thigh_r",(301,386),(82,168),3)
+    paste("shin_l",(210,507),(70,148),2); paste("shin_r",(302,507),(70,148),-2)
+    paste("shoe_l",(202,589),(116,64)); paste("shoe_r",(310,589),(116,64))
+    paste("upper_arm_l",(154,222),(74,142),-7); paste("upper_arm_r",(358,222),(74,142),7)
+    paste("forearm_l",(145,323),(66,142),-3); paste("forearm_r",(367,323),(66,142),3)
+    paste("sleeve_l",(153,202),(84,82),-7); paste("sleeve_r",(359,202),(84,82),7)
+    paste("hand_l",(140,389),(64,78)); paste("hand_r",(372,389),(64,78))
+    paste("torso_base",(256,226),(182,224))
+    paste("neck",(256,113),(58,62))
+    paste("ear_left",(197,95),(27,39)); paste("ear_right",(315,95),(27,39))
+    paste("head_base",(256,89),(136,166))
+    paste("eyes_pair",(256,82),(91,69)); paste("brows_pair",(256,63),(91,52))
+    paste("nose_small",(256,101),(32,48)); paste("mouth_smile",(256,128),(53,39))
+    paste("beard_short",(256,126),(83,54))
+    paste("hair_back",(256,60),(136,150)); paste("hair_front",(256,65),(136,75))
+    paste("cap_front",(256,27),(150,78))
+    out=ROOT/"app/build/character-art/avatar-preview.png"
+    out.parent.mkdir(parents=True,exist_ok=True)
+    canvas.save(out)
+    print("Generated rig-art preview:",out)
+
 def main():
     manifest=json.loads(MANIFEST.read_text(encoding="utf-8"))
     SVG_DIR.mkdir(parents=True,exist_ok=True); PNG_DIR.mkdir(parents=True,exist_ok=True)
@@ -146,5 +176,6 @@ def main():
             low, high = image.getchannel("A").getextrema()
             if low == high or high == 0:
                 raise SystemExit(f"PNG must contain transparent and visible pixels: {pid}")
+    make_preview()
     print(f"Generated {len(seen)} original SVG layers and {len(seen)} transparent PNGs")
 if __name__=="__main__": main()
