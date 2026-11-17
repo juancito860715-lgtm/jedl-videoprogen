@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import org.json.JSONObject
@@ -255,6 +256,9 @@ object CharacterLayerLibrary {
     @Volatile private var manifestSource: String = "NOT_INITIALIZED"
     private val bitmaps = LinkedHashMap<String, Bitmap>()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val facePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    @Volatile private var faceMountedState: Boolean = false
+    fun lastFaceMounted(): Boolean = faceMountedState
 
     @Synchronized fun init(context: Context) {
         if (appContext != null) return
@@ -313,11 +317,20 @@ object CharacterLayerLibrary {
     @Synchronized fun draw(
         canvas: Canvas,
         solved: Map<String, BonePose>,
-        appearance: CharacterLayerAppearance = CharacterLayerAppearance()
+        appearance: CharacterLayerAppearance = CharacterLayerAppearance(),
+        face: Bitmap? = null
     ): Boolean {
+        faceMountedState = false
         val ctx = appContext ?: return false
         val current = manifest ?: return false
+        val validFace = face?.let { !it.isRecycled && it.width > 0 && it.height > 0 } == true
+        val facialSlots = setOf(
+            CharacterLayerSlot.EYES, CharacterLayerSlot.EYEBROWS,
+            CharacterLayerSlot.NOSE, CharacterLayerSlot.MOUTH,
+            CharacterLayerSlot.FACIAL_HAIR
+        )
         val layers = CharacterLayerContract.resolve(current, appearance)
+            .filterNot { validFace && it.slot in facialSlots }
         if (layers.isEmpty() || layers.any { solved[it.boneId] == null }) return false
         val prepared = layers.map { layer ->
             if (layer.file.startsWith("builtin://")) layer to null
@@ -326,39 +339,44 @@ object CharacterLayerLibrary {
         for ((layer, bitmap) in prepared) {
             val pose = solved[layer.boneId] ?: return false
             val save = canvas.save()
-            canvas.concat(pose.matrix)
-            if (layer.file.startsWith("builtin://")) {
-                canvas.translate(
-                    layer.offsetX - layer.pivotX * layer.widthUnits,
-                    layer.offsetY - layer.pivotY * layer.heightUnits
-                )
-                canvas.scale(layer.widthUnits, layer.heightUnits)
-                if (!CharacterPartPainter.draw(
-                    canvas, layer.file.removePrefix("builtin://"), appearance.colors
-                )) {
-                    canvas.restoreToCount(save)
-                    return false
+            try {
+                canvas.concat(pose.matrix)
+                val left = layer.offsetX - layer.pivotX * layer.widthUnits
+                val top = layer.offsetY - layer.pivotY * layer.heightUnits
+                if (layer.file.startsWith("builtin://")) {
+                    canvas.translate(left, top)
+                    canvas.scale(layer.widthUnits, layer.heightUnits)
+                    if (!CharacterPartPainter.draw(
+                        canvas, layer.file.removePrefix("builtin://"), appearance.colors
+                    )) return false
+                } else {
+                    val image = bitmap ?: return false
+                    canvas.translate(left, top)
+                    canvas.scale(
+                        layer.widthUnits / image.width.toFloat(),
+                        layer.heightUnits / image.height.toFloat()
+                    )
+                    paint.colorFilter = appearance.colors[layer.tintChannel]?.let {
+                        PorterDuffColorFilter(it, PorterDuff.Mode.MULTIPLY)
+                    }
+                    canvas.drawBitmap(image, 0f, 0f, paint)
+                    paint.colorFilter = null
                 }
-            } else {
-                val image = bitmap ?: run {
-                    canvas.restoreToCount(save)
-                    return false
+                if (validFace && layer.slot == CharacterLayerSlot.HEAD) {
+                    val faceRect = FaceMountGeometry.mapToBoneLocal(
+                        left, top, layer.widthUnits, layer.heightUnits
+                    ) ?: return false
+                    canvas.drawBitmap(
+                        face!!, null,
+                        RectF(faceRect.left, faceRect.top, faceRect.right, faceRect.bottom),
+                        facePaint
+                    )
+                    faceMountedState = true
                 }
-                canvas.translate(
-                    layer.offsetX - layer.pivotX * layer.widthUnits,
-                    layer.offsetY - layer.pivotY * layer.heightUnits
-                )
-                canvas.scale(
-                    layer.widthUnits / image.width.toFloat(),
-                    layer.heightUnits / image.height.toFloat()
-                )
-                paint.colorFilter = appearance.colors[layer.tintChannel]?.let {
-                    PorterDuffColorFilter(it, PorterDuff.Mode.SRC_IN)
-                }
-                canvas.drawBitmap(image, 0f, 0f, paint)
+            } finally {
                 paint.colorFilter = null
+                canvas.restoreToCount(save)
             }
-            canvas.restoreToCount(save)
         }
         return true
     }

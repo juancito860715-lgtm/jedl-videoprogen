@@ -8,6 +8,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.util.Log
 
 // ============================================================
 // F1 — RENDER DEL AVATAR POR PIEZAS (v0.7.0-f1)
@@ -46,6 +47,14 @@ object AvatarRenderer {
     // Al aprobar la Misión 1: poner en false (no borrar nada más).
     // ============================================================
     private const val DEBUG_RECTS = false
+    @Volatile var lastRenderPath: String = "NOT_RENDERED"
+        private set
+    @Volatile var lastFallbackReason: String? = null
+        private set
+    @Volatile var lastFaceProvided: Boolean = false
+        private set
+    @Volatile var lastFaceMounted: Boolean = false
+        private set
 
     private fun darker(argb: Int): Int {
         val a = (argb ushr 24) and 0xFF
@@ -60,15 +69,33 @@ object AvatarRenderer {
         canvas: Canvas, solved: Map<String, BonePose>,
         spec: AvatarSpec, face: Bitmap?, direction: String
     ) {
+        lastFaceProvided = face?.let { !it.isRecycled && it.width > 0 && it.height > 0 } == true
+        lastFaceMounted = false
+        lastFallbackReason = null
         if (DEBUG_RECTS) {
+            lastRenderPath = "DEBUG_RECTS"
             drawDebugRects(canvas, solved)
             return
         }
 
-        // Piezas PNG del banco (F2+): si hay manifest, mandan.
-        if (PieceLibrary.hasBitmapPieces() && drawBitmapPieces(canvas, solved, spec)) return
+        val modularReady = CharacterLayerLibrary.isReady()
+        val modularDrawn = modularReady && CharacterLayerLibrary.draw(
+            canvas, solved, CharacterLayerAppearance.fromAvatarSpec(spec), face
+        )
+        if (modularDrawn) {
+            lastRenderPath = "MODULAR_LAYERS"
+            lastFaceMounted = CharacterLayerLibrary.lastFaceMounted()
+            return
+        }
 
-        // Piezas vectoriales del estilo base. El orden procede del contrato compartido.
+        val reason = when {
+            !CharacterLayerLibrary.isInitialized() -> "CharacterLayerLibrary_NOT_INITIALIZED"
+            !modularReady -> "CharacterLayerLibrary_MANIFEST_NOT_READY"
+            else -> "CharacterLayerLibrary_DRAW_RETURNED_FALSE"
+        }
+        lastRenderPath = "VECTOR_FALLBACK"
+        lastFallbackReason = reason
+        Log.w("JEDL.AvatarRenderer", "Fallback VECTOR_FALLBACK: $reason")
         for (name in AvatarRenderOrder.backToFront) {
             when (name) {
                 "armUR", "armUL" -> bone(canvas, solved, name) { upperArm(it, spec) }
