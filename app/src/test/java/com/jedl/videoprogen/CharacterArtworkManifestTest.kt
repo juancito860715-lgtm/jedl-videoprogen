@@ -9,9 +9,14 @@ import java.io.File
 
 class CharacterArtworkManifestTest {
     @Test fun everyRigPartUsesItsOwnTransparentRuntimeLayer() {
-        val file = File("app/src/main/assets/characters/jedl_master_v1/manifest.json")
-        assertTrue("Character manifest must exist", file.isFile)
-        val root = JSONObject(file.readText())
+        val file = listOf(
+            File("src/main/assets/characters/jedl_master_v1/manifest.json"),
+            File("app/src/main/assets/characters/jedl_master_v1/manifest.json")
+        ).firstOrNull { it.isFile }
+        assertTrue("Character manifest must exist", file != null)
+        val manifestFile = requireNotNull(file)
+        val assetRoot = requireNotNull(manifestFile.parentFile)
+        val root = JSONObject(manifestFile.readText())
         val parts = root.getJSONArray("parts")
         val ids = mutableSetOf<String>()
         val paths = mutableSetOf<String>()
@@ -26,6 +31,9 @@ class CharacterArtworkManifestTest {
             assertTrue("Duplicate part id: $id", ids.add(id))
             assertTrue("Each rig part must have a distinct PNG: $path", paths.add(path))
             assertEquals("layers/$id.png", path)
+            val png = File(assetRoot, path)
+            assertTrue("Generated PNG missing for $id: $path", png.isFile)
+            assertTrue("Generated PNG is empty for $id: $path", png.length() > 100L)
             assertTrue("Unknown rig bone for $id", supportedBones.contains(part.getString("boneId")))
             assertTrue("Pivot X must be normalized for $id",
                 part.getDouble("pivotX").isFinite() && part.getDouble("pivotX") in 0.0..1.0)
