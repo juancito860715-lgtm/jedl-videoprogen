@@ -20,6 +20,23 @@ class MotionLibraryTest {
         assertTrue(MotionLibraryValidator.validate(files).joinToString("\n"), MotionLibraryValidator.validate(files).isEmpty())
     }
 
+    @Test fun retargeterClampsImportedAnglesToRigJointLimits() {
+        val pose = AnimationRetargeter.retarget(
+            mapOf(
+                "mixamorig:RightForeArm" to -95f,
+                "mixamorig:LeftForeArm" to 40f,
+                "mixamorig:LeftLeg" to 25f,
+                "mixamorig:RightUpLeg" to 90f,
+                "mixamorig:Spine" to 210f
+            )
+        )
+        assertEquals(-5f, pose.angles.getValue("foreArmR"), 0.001f)
+        assertEquals(5f, pose.angles.getValue("foreArmL"), 0.001f)
+        assertEquals(5f, pose.angles.getValue("shinL"), 0.001f)
+        assertEquals(60f, pose.angles.getValue("thighR"), 0.001f)
+        assertEquals(180f, pose.angles.getValue("torso"), 0.001f)
+    }
+
     @Test fun bowKickStretchAndStumbleContainRealPoseChanges() {
         val files = motionFiles()
         listOf("bow.json", "kick.json", "stretch.json", "stumble.json").forEach { name ->
