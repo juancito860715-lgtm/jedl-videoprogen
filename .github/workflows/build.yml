@@ -63,6 +63,18 @@ jobs:
           else
             echo "face_landmarker.task: ${FZ} bytes"
           fi
+      - name: Generate and validate original rigged character artwork
+        run: |
+          python3 -m pip install --disable-pip-version-check cairosvg pillow
+          python3 tools/character_art/generate_parts.py
+      - name: Upload original SVG layers and assembled art preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: character-art-preview
+          path: |
+            tools/character_art/generated/*.svg
+            app/build/character-art/avatar-preview.png
+          if-no-files-found: error
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Run tests and build debug APK

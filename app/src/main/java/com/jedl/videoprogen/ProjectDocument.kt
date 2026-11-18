@@ -74,7 +74,8 @@ data class CharacterAppearanceDocument(
     val enabled: Boolean = true,
     val direction: String = "der",
     val actorX: Float = 0.5f,
-    val actorY: Float = 0.55f
+    val actorY: Float = 0.55f,
+    val faceAssetPath: String? = null
 )
 
 data class LayerDocument(
@@ -145,6 +146,7 @@ object ProjectDocumentValidator {
                     if (appearance.name.isBlank() || appearance.name.length > 120 || appearance.hairStyle !in 0..4) return "Apariencia de personaje no válida"
                     if (appearance.direction !in setOf("der", "izq", "espalda", "frente", "3/4")) return "Dirección de personaje no válida"
                     if (!appearance.actorX.isFinite() || !appearance.actorY.isFinite() || appearance.actorX !in 0f..1f || appearance.actorY !in 0f..1f) return "Posición del personaje no válida"
+                    if (appearance.faceAssetPath != null && !isSafeRelativeAssetPath(appearance.faceAssetPath)) return "Ruta de cara no segura"
                 }
             }
             val timelineError = TimelineDocumentValidator.validate(scene.timelineTracks, scene.durationMillis)

@@ -1,0 +1,121 @@
+package com.jedl.videoprogen
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class DeveloperLayerSnapshot(
+    val id: String,
+    val name: String,
+    val type: String,
+    val zIndex: Int,
+    val visible: Boolean,
+    val activeAtCapture: Boolean,
+    val assetPath: String?
+)
+
+data class DeveloperDiagnosticsSnapshot(
+    val activeProjectPresent: Boolean = false,
+    val projectId: String? = null,
+    val projectName: String? = null,
+    val activeSceneId: String? = null,
+    val photoBitmapLoaded: Boolean = false,
+    val photoBitmapWidth: Int? = null,
+    val photoBitmapHeight: Int? = null,
+    val photoBitmapRecycled: Boolean? = null,
+    val photoLayerPresent: Boolean = false,
+    val photoLayerZIndex: Int? = null,
+    val photoAssetPath: String? = null,
+    val faceCutterExecuted: Boolean = false,
+    val faceCutterReturnedBitmap: Boolean? = null,
+    val faceBitmapValid: Boolean = false,
+    val faceBitmapWidth: Int? = null,
+    val faceBitmapHeight: Int? = null,
+    val facePassedToAvatarRenderer: Boolean = false,
+    val faceProvided: Boolean = false,
+    val faceMounted: Boolean = false,
+    val layersDrawn: Int = 0,
+    val layersFailed: Int = 0,
+    // Legacy PNG bank (assets/pieces/) is kept separate from the active modular bank.
+    val pieceLibraryInitialized: Boolean = false,
+    val pieceManifestFound: Boolean = false,
+    val pngPiecesAvailable: Boolean = false,
+    val characterLayerLibraryInitialized: Boolean = false,
+    val characterManifestSource: String = "NOT_INITIALIZED",
+    val builtinVectorPartsAvailable: Boolean = false,
+    val characterPngAssetsAvailable: Boolean = false,
+    val avatarRenderPath: String = "NOT_RENDERED",
+    val characterAppearanceEnabled: Boolean? = null,
+    val layerVisible: Boolean? = null,
+    val posX: Float? = null,
+    val posY: Float? = null,
+    val layers: List<DeveloperLayerSnapshot> = emptyList()
+) {
+    fun toJson(): String {
+        val project = JSONObject()
+            .put("activeProjectPresent", activeProjectPresent)
+            .putNullable("id", projectId)
+            .putNullable("name", projectName)
+            .putNullable("activeSceneId", activeSceneId)
+
+        val photo = JSONObject()
+            .put("bitmapLoaded", photoBitmapLoaded)
+            .putNullable("width", photoBitmapWidth)
+            .putNullable("height", photoBitmapHeight)
+            .putNullable("bitmapRecycled", photoBitmapRecycled)
+            .put("photoLayerPresent", photoLayerPresent)
+            .putNullable("zIndex", photoLayerZIndex)
+            .putNullable("assetPath", photoAssetPath)
+
+        val face = JSONObject()
+            .put("faceCutterExecuted", faceCutterExecuted)
+            .putNullable("faceCutterReturnedBitmap", faceCutterReturnedBitmap)
+            .put("bitmapValid", faceBitmapValid)
+            .putNullable("width", faceBitmapWidth)
+            .putNullable("height", faceBitmapHeight)
+            .put("passedToAvatarRenderer", facePassedToAvatarRenderer)
+            .put("faceProvided", faceProvided)
+            .put("faceMounted", faceMounted)
+
+        val avatar = JSONObject()
+            .put("pieceLibraryInitialized", pieceLibraryInitialized)
+            .put("pieceManifestFound", pieceManifestFound)
+            .put("pngPiecesAvailable", pngPiecesAvailable)
+            .put("characterLayerLibraryInitialized", characterLayerLibraryInitialized)
+            .put("characterManifestSource", characterManifestSource)
+            .put("builtinVectorPartsAvailable", builtinVectorPartsAvailable)
+            .put("characterPngAssetsAvailable", characterPngAssetsAvailable)
+            .put("renderPath", avatarRenderPath)
+            .put("layersDrawn", layersDrawn)
+            .put("layersFailed", layersFailed)
+            .putNullable("characterAppearanceEnabled", characterAppearanceEnabled)
+            .putNullable("layerVisible", layerVisible)
+            .putNullable("posX", posX)
+            .putNullable("posY", posY)
+
+        val layerArray = JSONArray()
+        layers.sortedBy { it.zIndex }.forEach { layer ->
+            layerArray.put(
+                JSONObject()
+                    .put("id", layer.id)
+                    .put("name", layer.name)
+                    .put("type", layer.type)
+                    .put("zIndex", layer.zIndex)
+                    .put("visible", layer.visible)
+                    .put("activeAtCapture", layer.activeAtCapture)
+                    .putNullable("assetPath", layer.assetPath)
+            )
+        }
+
+        return JSONObject()
+            .put("diagnosticVersion", "F2.8")
+            .put("project", project)
+            .put("photo", photo)
+            .put("face", face)
+            .put("avatar", avatar)
+            .put("sceneLayers", layerArray)
+            .toString(2)
+    }
+
+    private fun JSONObject.putNullable(key: String, value: Any?): JSONObject =
+        put(key, value ?: JSONObject.NULL)
+}

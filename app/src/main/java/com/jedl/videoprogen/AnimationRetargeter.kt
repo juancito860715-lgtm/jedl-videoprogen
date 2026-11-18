@@ -91,7 +91,14 @@ object AnimationRetargeter {
             val target = BONE_MAP[normalize(rawName)] ?: continue  // manos/pies/dedos: IGNORADOS
             acc[target] = (acc[target] ?: 0f) + sign * rawVal
         }
-        return Pose(acc, bob, sway)
+        // Imported clips may contain angles beyond this 2D rig's joint limits.
+        // Clamp once while loading the clip, not on every rendered frame.
+        // Keep non-finite values visible to MotionLibraryValidator instead of
+        // silently converting them into a finite joint-limit value.
+        val bounded = acc.mapValues { (bone, angle) ->
+            if (angle.isFinite()) PuppetEngine.clampJoint(bone, angle) else angle
+        }
+        return Pose(bounded, bob, sway)
     }
 
     /** El hueso del rig al que apunta un nombre de biblioteca (para pruebas). */

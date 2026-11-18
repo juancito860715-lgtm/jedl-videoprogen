@@ -129,6 +129,8 @@ class MainActivity : ComponentActivity() {
     // elipse manual con el dedo). El recorte pasa a ser SOLO CARA.
     private var faceFromPhoto by mutableStateOf(false)
     private var faceBitmap: Bitmap? = null
+    @Volatile private var lastFaceCutterExecuted: Boolean = false
+    @Volatile private var lastFaceCutterReturnedBitmap: Boolean? = null
     private var faceEditMode by mutableStateOf(false)   // colocar la elipse con el dedo
     private var faceCx by mutableStateOf(0.5f)          // centro en fracciones de la foto
     private var faceCy by mutableStateOf(0.35f)
@@ -168,6 +170,9 @@ class MainActivity : ComponentActivity() {
     private val timelineMediaLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) importProjectMedia(uri, pendingTimelineType)
     }
+    private val diagnosticsLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri != null) writeDeveloperDiagnostics(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -176,6 +181,7 @@ class MainActivity : ComponentActivity() {
         ttsManager = TtsManager(this)
         projectRepository = ProjectRepository(this)
         projectAssetStore = ProjectAssetStore(this)
+        CharacterLayerLibrary.init(this)
 
         // v0.8.0: cargar la BIBLIOTECA de movimientos (assets/motions) en
         // hilo de fondo. Cada acción inyectada PISA su fórmula en
@@ -210,6 +216,11 @@ class MainActivity : ComponentActivity() {
                             }
                             TextButton(onClick = { showProjectSheet = true }) {
                                 Text("Proyectos", color = Gold, fontSize = 12.sp)
+                            }
+                            TextButton(onClick = {
+                                diagnosticsLauncher.launch("JEDL_DeveloperDiagnostics.json")
+                            }) {
+                                Text("Diagnóstico", color = Gold, fontSize = 12.sp)
                             }
                             TextButton(onClick = {
                                 if (activeProject == null) Toast.makeText(this@MainActivity, "Crea o abre un proyecto primero", Toast.LENGTH_SHORT).show()
@@ -841,9 +852,12 @@ class MainActivity : ComponentActivity() {
         if (original == null) { statusMsg = "Cargá primero una foto con tu cara (botón Actor)"; return }
         showAvatarSheet = false
         statusMsg = "Buscando tu cara (IA)... esperá un momento"
+        lastFaceCutterExecuted = true
+        lastFaceCutterReturnedBitmap = null
         Thread {
             val t0 = SystemClock.elapsedRealtime()
             val face = FaceCutter.cutFaceAuto(this, original)
+            lastFaceCutterReturnedBitmap = face != null
             val ms = SystemClock.elapsedRealtime() - t0
             runOnUiThread {
                 if (face != null) {
@@ -873,8 +887,10 @@ class MainActivity : ComponentActivity() {
             return
         }
         statusMsg = "Recortando cara..."
+        lastFaceCutterExecuted = true
         Thread {
             val face = FaceCutter.cutFaceManual(original, faceCx, faceCy, faceR)
+            lastFaceCutterReturnedBitmap = face != null
             runOnUiThread {
                 safeRecycle(faceBitmap)
                 faceBitmap = face
@@ -1242,40 +1258,82 @@ class MainActivity : ComponentActivity() {
     private fun loadPhoto(uri: Uri) {
         statusMsg = "Cargando foto..."
         Thread {
-            val bitmap = decodeScaled(uri, 1600)
-            if (bitmap == null) { runOnUiThread { statusMsg = "Error al cargar foto" }; return@Thread }
-            val newMesh = SkinnedMesh(bitmap)
-            runOnUiThread {
-                pushUndo()
-                // Liberar los bitmaps anteriores (TAREA 5: recycle)
-                if (photo !== originalPhoto) safeRecycle(photo)
-                safeRecycle(originalPhoto)
-                photo = bitmap
-                originalPhoto = bitmap
-                mesh = newMesh
-                animProgress = 0f
-                showExportBtn = true
-                statusMsg = "Foto cargada · se dobla con el muñeco"
-                drawPreview()
+            try {
+                val bitmap = decodeScaled(uri, 1600)
+                    ?: throw java.io.IOException("No se pudo decodificar la foto")
+                val project = activeProject
+                    ?: projectRepository.save(ProjectRepository.newProject("Proyecto 1"))
+                val input = contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("No se pudo abrir la foto original")
+                val imported = input.use {
+                    projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "actor.jpg")
+                }
+                val scene = project.scenes.first()
+                val updatedScene = ProjectLayerInjection.injectAsset(
+                    scene, imported.relativePath, LayerType.IMAGE
+                )
+                val savedProject = projectRepository.save(project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(updatedScene) + project.scenes.drop(1)
+                ))
+                val newMesh = SkinnedMesh(bitmap)
+                runOnUiThread {
+                    pushUndo()
+                    if (photo !== originalPhoto) safeRecycle(photo)
+                    safeRecycle(originalPhoto)
+                    photo = bitmap
+                    originalPhoto = bitmap
+                    mesh = newMesh
+                    activeProject = savedProject
+                    avatarMode = true
+                    avatarSpec = Avatars.presets().first()
+                    animProgress = 0f
+                    showExportBtn = true
+                    statusMsg = "Foto importada como capa IMAGE bajo el personaje"
+                    drawPreview()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusMsg = error.message ?: "Error al importar la foto al proyecto"
+                    Toast.makeText(this, statusMsg, Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
 
     private fun loadBackground(uri: Uri) {
         Thread {
-            val bmp = decodeScaled(uri, 1280)
-            if (bmp != null) {
+            try {
+                val bmp = decodeScaled(uri, 1280)
+                    ?: throw java.io.IOException("No se pudo decodificar el fondo")
+                val project = activeProject
+                    ?: projectRepository.save(ProjectRepository.newProject("Proyecto 1"))
+                val input = contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("No se pudo abrir el fondo original")
+                val imported = input.use {
+                    projectAssetStore.importAsset(project.id, it, uri.lastPathSegment ?: "background.jpg")
+                }
+                val scene = project.scenes.first()
+                val updatedScene = ProjectLayerInjection.injectAsset(
+                    scene, imported.relativePath, LayerType.BACKGROUND
+                )
+                val savedProject = projectRepository.save(project.copy(
+                    modifiedAtMillis = System.currentTimeMillis(),
+                    scenes = listOf(updatedScene) + project.scenes.drop(1)
+                ))
                 runOnUiThread {
-                    // v0.5.1: el fondo también entra en deshacer/rehacer
-                    // (cambiar de fondo por descuido ya no lo pierde)
                     pushUndo()
                     safeRecycle(backgroundPhoto)
                     backgroundPhoto = bmp
-                    statusMsg = "Fondo cargado"
+                    activeProject = savedProject
+                    statusMsg = "Fondo importado como capa BACKGROUND"
                     drawPreview()
                 }
-            } else {
-                runOnUiThread { statusMsg = "Error al cargar fondo" }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusMsg = error.message ?: "Error al importar el fondo al proyecto"
+                    Toast.makeText(this, statusMsg, Toast.LENGTH_LONG).show()
+                }
             }
         }.start()
     }
@@ -1722,6 +1780,62 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun writeDeveloperDiagnostics(uri: Uri) {
+        try {
+            val project = activeProject
+            val scene = project?.scenes?.firstOrNull()
+            val photoLayer = scene?.layers?.filter { it.type == LayerType.IMAGE }?.maxByOrNull { it.zIndex }
+            val characterLayer = scene?.layers?.firstOrNull { it.type == LayerType.CHARACTER }
+            val face = faceBitmap
+            val snapshot = DeveloperDiagnosticsSnapshot(
+                activeProjectPresent = project != null,
+                projectId = project?.id,
+                projectName = project?.name,
+                activeSceneId = scene?.id,
+                photoBitmapLoaded = photo?.let { !it.isRecycled } == true,
+                photoBitmapWidth = photo?.width,
+                photoBitmapHeight = photo?.height,
+                photoBitmapRecycled = photo?.isRecycled,
+                photoLayerPresent = photoLayer != null,
+                photoLayerZIndex = photoLayer?.zIndex,
+                photoAssetPath = photoLayer?.assetPath,
+                faceCutterExecuted = lastFaceCutterExecuted,
+                faceCutterReturnedBitmap = lastFaceCutterReturnedBitmap,
+                faceBitmapValid = face?.let { !it.isRecycled && it.width > 0 && it.height > 0 } == true,
+                faceBitmapWidth = face?.width,
+                faceBitmapHeight = face?.height,
+                facePassedToAvatarRenderer = AvatarRenderer.lastFaceProvided,
+                faceProvided = AvatarRenderer.lastFaceProvided,
+                faceMounted = AvatarRenderer.lastFaceMounted,
+                characterLayerLibraryInitialized = CharacterLayerLibrary.isInitialized(),
+                characterManifestSource = CharacterLayerLibrary.manifestSource(),
+                builtinVectorPartsAvailable = CharacterLayerLibrary.builtinVectorPartsAvailable(),
+                characterPngAssetsAvailable = CharacterLayerLibrary.declaredPngAssetsAvailable(),
+                avatarRenderPath = AvatarRenderer.lastRenderPath,
+                characterAppearanceEnabled = characterLayer?.characterAppearance?.enabled,
+                layerVisible = characterLayer?.visible,
+                posX = characterLayer?.transform?.x,
+                posY = characterLayer?.transform?.y,
+                layersDrawn = SceneRenderDiagnostics.layersDrawn,
+                layersFailed = SceneRenderDiagnostics.layersFailed,
+                layers = scene?.layers.orEmpty().map { layer ->
+                    DeveloperLayerSnapshot(
+                        id = layer.id, name = layer.name, type = layer.type.name,
+                        zIndex = layer.zIndex, visible = layer.visible,
+                        activeAtCapture = ProjectLayerTiming.isActive(layer, 0L),
+                        assetPath = layer.assetPath
+                    )
+                }
+            )
+            val output = contentResolver.openOutputStream(uri)
+                ?: throw java.io.IOException("No se pudo abrir el archivo de diagnóstico")
+            output.use { it.write(snapshot.toJson().toByteArray(Charsets.UTF_8)) }
+            Toast.makeText(this, "Diagnóstico JSON guardado", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, error.message ?: "No se pudo guardar el diagnóstico", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun resolveProjectBitmap(relativePath: String): Bitmap? {
         val projectId = activeProject?.id ?: return null
         val cacheKey = projectId + "/" + relativePath
@@ -1877,7 +1991,7 @@ class MainActivity : ComponentActivity() {
             actorY = appearance.actorY
         }
         val characterClips = character?.let { target -> scene.animationClips.filter { it.targetLayerId == target.id } }.orEmpty()
-        val clip = characterClips.firstOrNull { it.id == preferredClipId }
+        val clip = scene.animationClips.firstOrNull { it.id == preferredClipId }
             ?: characterClips.firstOrNull()
         selectedProjectAnimationClipId = clip?.id.orEmpty()
         if (clip != null) {

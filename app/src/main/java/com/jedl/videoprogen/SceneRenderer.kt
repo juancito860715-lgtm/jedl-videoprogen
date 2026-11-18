@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.util.Log
 import kotlin.math.min
 
 // Motor compartido por preview y exportación.
@@ -23,6 +24,7 @@ object SceneRenderer {
         projectScene: SceneDocument? = null,
         assetResolver: ((String) -> Bitmap?)? = null
     ) {
+        SceneRenderDiagnostics.beginFrame()
         canvas.drawColor(projectScene?.backgroundColor ?: Color.BLACK)
         val projectMode = projectScene != null
         if (!projectMode && background != null) {
@@ -37,10 +39,7 @@ object SceneRenderer {
         val sceneTime = projectScene?.let {
             (progress.coerceIn(0f, 1f) * it.durationMillis).toLong()
         } ?: 0L
-        val characterLayer = projectScene?.layers
-            ?.filter { it.type == LayerType.CHARACTER && ProjectLayerTiming.isActive(it, sceneTime) }
-            ?.maxByOrNull { it.zIndex }
-        val pose = overridePose ?: run {
+        val basePose = overridePose ?: run {
             val s = blend * blend * (3f - 2f * blend)
             PuppetEngine.lerpPose(
                 PuppetEngine.poseForActive(prevTemplate, progress),
@@ -50,16 +49,42 @@ object SceneRenderer {
         }
         val drawActor: (LayerDocument?) -> Unit = { layer ->
             val appearance = layer?.characterAppearance
+            if (layer != null && appearance == null) {
+                Log.w("JEDL.SceneRenderer", "Character layer ${layer.id} has no appearance; using default avatar appearance")
+            }
             val layerX = layer?.transform?.x ?: actorX
             val layerY = layer?.transform?.y ?: actorY
             val effectiveActorX = appearance?.actorX ?: layerX
             val effectiveActorY = appearance?.actorY ?: layerY
             val unit = min(w.toFloat(), h.toFloat()) * 0.88f / 0.85f
-            val effectiveAvatarMode = if (appearance != null) appearance.enabled else avatarMode
+            val effectiveAvatarMode = if (layer != null) (appearance?.enabled ?: true) else (appearance?.enabled ?: avatarMode)
             val effectiveAvatarSpec = appearance?.let {
                 AvatarSpec(it.name, it.skin, it.hair, it.hairStyle, it.shirt, it.pants, it.shoes, it.beard)
-            } ?: avatarSpec
-            val solved = PuppetRig.HUMANOID.solve(pose.angles, 0f, 0f)
+            } ?: avatarSpec ?: if (layer != null) Avatars.presets().firstOrNull() else null
+
+            // Cada capa de personaje puede tener un clip persistente distinto.
+            // Si no tiene clip propio, conserva el movimiento activo del editor.
+            val clipPose = if (layer != null && projectScene != null) {
+                ProjectAnimationSampler.poseForLayer(
+                    projectScene,
+                    layer,
+                    sceneTime
+                )
+            } else {
+                null
+            }
+            val layerPose = clipPose ?: basePose
+            val effectiveDirection = appearance?.direction ?: direction
+            val avatarPose = if (effectiveAvatarMode && effectiveAvatarSpec != null) {
+                PuppetEngine.applyDirection(
+                    layerPose,
+                    if (clipPose == null) template.builtin ?: "" else "",
+                    effectiveDirection
+                )
+            } else {
+                layerPose
+            }
+            val solved = PuppetRig.HUMANOID.solve(avatarPose.angles, 0f, 0f)
 
             canvas.save()
             if (layer == null) {
@@ -67,15 +92,12 @@ object SceneRenderer {
             } else {
                 canvas.translate(w * (effectiveActorX - layerX), h * (effectiveActorY - layerY))
             }
-            canvas.translate(pose.sway * unit, pose.bob * unit)
+            canvas.translate(avatarPose.sway * unit, avatarPose.bob * unit)
             canvas.scale(unit, unit)
 
             if (effectiveAvatarMode && effectiveAvatarSpec != null) {
-                val effectiveDirection = appearance?.direction ?: direction
-                val poseDir = PuppetEngine.applyDirection(pose, template.builtin ?: "", effectiveDirection)
-                val solvedAvatar = PuppetRig.HUMANOID.solve(poseDir.angles, 0f, 0f)
                 if (effectiveDirection == "izq") canvas.scale(-1f, 1f)
-                AvatarRenderer.draw(canvas, solvedAvatar, effectiveAvatarSpec, avatarFace, effectiveDirection)
+                AvatarRenderer.draw(canvas, solved, effectiveAvatarSpec, avatarFace, effectiveDirection)
             } else {
                 PuppetEngine.drawPuppet(canvas, solved, mesh)
             }
@@ -93,18 +115,27 @@ object SceneRenderer {
             }
             canvas.restore()
         }
-        if (!projectMode) drawActor(null)
+        if (!projectMode) {
+            try {
+                drawActor(null)
+                SceneRenderDiagnostics.complete("LEGACY_SCENE", 1, 0)
+            } catch (error: Exception) {
+                Log.w("JEDL.SceneRenderer", "Legacy actor render failed; continuing", error)
+                SceneRenderDiagnostics.complete("LEGACY_FALLBACK", 0, 1)
+            }
+        }
 
         if (!projectMode) {
             drawText(canvas, w, h, text, textX, textY, textSize)
         } else {
-            val scene = requireNotNull(projectScene)
-            SceneLayerRenderer.drawLayers(
+            val scene = projectScene ?: return
+            val layerStats = SceneLayerRenderer.drawLayers(
                 canvas, w, h, scene.layers,
                 assetResolver ?: { null },
                 sceneTime,
                 characterRenderer = drawActor
             )
+            SceneRenderDiagnostics.complete("PROJECT_SCENE", layerStats.drawn, layerStats.failed)
             val timedText = scene.timelineTracks
                 .filter { !it.muted && it.type in setOf(TimelineTrackType.TEXT, TimelineTrackType.SUBTITLE) }
                 .flatMap { it.clips }
