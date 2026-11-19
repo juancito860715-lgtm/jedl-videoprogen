@@ -89,6 +89,32 @@ class EngineCommonContractTest {
         assertFalse(runCatching { SceneTimebase(61, 1_000L) }.isSuccess)
     }
 
+
+    @Test
+    fun parserRejectsCoercibleButIncorrectJsonTypes() {
+        val wrongSchemaType = """{"schemaVersion":"1","id":"asset_1","kind":"IMAGE","path":"assets/a.png","width":64,"height":64}"""
+        val fractionalDimension = """{"schemaVersion":1,"id":"asset_1","kind":"IMAGE","path":"assets/a.png","width":64.5,"height":64}"""
+        val wrongPivotType = """{"schemaVersion":1,"id":"asset_1","kind":"IMAGE","path":"assets/a.png","width":64,"height":64,"pivot":"center"}"""
+        val stringPivotCoordinate = """{"schemaVersion":1,"id":"asset_1","kind":"IMAGE","path":"assets/a.png","width":64,"height":64,"pivot":{"x":"0.5","y":0.5}}"""
+
+        listOf(wrongSchemaType, fractionalDimension, wrongPivotType, stringPivotCoordinate).forEach { json ->
+            assertFalse(runCatching { EngineResourceManifest.fromJson(json) }.isSuccess)
+        }
+    }
+
+    @Test
+    fun serializerRejectsInvalidManifestInsteadOfEmittingBrokenContract() {
+        val invalid = EngineResourceManifest(
+            id = "../bad",
+            kind = EngineResourceKind.IMAGE,
+            path = "../private.png",
+            width = 0,
+            height = 64
+        )
+
+        assertFalse(runCatching { invalid.toJson() }.isSuccess)
+    }
+
     @Test
     fun partialFinalFrameEndSentinelMatchesExactSceneDuration() {
         val clock = SceneTimebase(framesPerSecond = 24, durationMillis = 1_001L)
