@@ -256,16 +256,32 @@ object CharacterLayerLibrary {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
     @Synchronized fun init(context: Context) {
-        if (appContext != null) return
-        appContext = context.applicationContext
-        manifest = try {
-            val json = context.assets.open("$ASSET_DIR/manifest.json")
+        if (manifest != null) return
+        val app = context.applicationContext
+        try {
+            val json = app.assets.open("$ASSET_DIR/manifest.json")
                 .bufferedReader().use { it.readText() }
-            CharacterLayerContract.parse(json)?.takeIf {
-                CharacterLayerContract.validate(it).isValid
-            } ?: CharacterLayerContract.starterManifest()
-        } catch (_: Exception) {
-            CharacterLayerContract.starterManifest()
+            val parsed = requireNotNull(CharacterLayerContract.parse(json)) {
+                "Invalid character layer manifest: $ASSET_DIR/manifest.json"
+            }
+            val validation = CharacterLayerContract.validate(parsed)
+            check(validation.isValid) {
+                "Character layer manifest validation failed: ${validation.errors.joinToString()}"
+            }
+            appContext = app
+            // Fail during initialization, not later during rendering, if any
+            // declared PNG is missing, undecodable, or lacks transparency.
+            parsed.parts.filterNot { it.file.startsWith("builtin://") }
+                .forEach { bitmapFor(app, it.file) }
+            manifest = parsed
+        } catch (error: Exception) {
+            bitmaps.values.forEach { if (!it.isRecycled) it.recycle() }
+            bitmaps.clear()
+            appContext = null
+            manifest = null
+            throw IllegalStateException(
+                "Unable to load required character artwork from $ASSET_DIR", error
+            )
         }
     }
 
@@ -276,13 +292,15 @@ object CharacterLayerLibrary {
         solved: Map<String, BonePose>,
         appearance: CharacterLayerAppearance = CharacterLayerAppearance()
     ): Boolean {
-        val ctx = appContext ?: return false
-        val current = manifest ?: return false
+        val ctx = appContext
+            ?: throw IllegalStateException("CharacterLayerLibrary.init(context) must succeed before draw()")
+        val current = manifest
+            ?: throw IllegalStateException("CharacterLayerLibrary has no validated manifest")
         val layers = CharacterLayerContract.resolve(current, appearance)
         if (layers.isEmpty() || layers.any { solved[it.boneId] == null }) return false
         val prepared = layers.map { layer ->
             if (layer.file.startsWith("builtin://")) layer to null
-            else layer to (bitmapFor(ctx, layer.file) ?: return false)
+            else layer to bitmapFor(ctx, layer.file)
         }
         for ((layer, bitmap) in prepared) {
             val pose = solved[layer.boneId] ?: return false
@@ -301,9 +319,8 @@ object CharacterLayerLibrary {
                     return false
                 }
             } else {
-                val image = bitmap ?: run {
-                    canvas.restoreToCount(save)
-                    return false
+                val image = checkNotNull(bitmap) {
+                    "Missing decoded PNG for character layer ${layer.id}: ${layer.file}"
                 }
                 canvas.translate(
                     layer.offsetX - layer.pivotX * layer.widthUnits,
@@ -324,21 +341,24 @@ object CharacterLayerLibrary {
         return true
     }
 
-    @Synchronized private fun bitmapFor(context: Context, file: String): Bitmap? {
-        bitmaps[file]?.let { return it }
-        return try {
-            val bitmap = context.assets.open("$ASSET_DIR/$file").use {
-                BitmapFactory.decodeStream(it)
-            } ?: return null
-            if (!bitmap.hasAlpha()) {
-                bitmap.recycle()
-                return null
-            }
-            bitmaps[file] = bitmap
-            bitmap
-        } catch (_: Exception) {
-            null
+    @Synchronized private fun bitmapFor(context: Context, file: String): Bitmap {
+        bitmaps[file]?.let { cached ->
+            if (!cached.isRecycled) return cached
+            bitmaps.remove(file)
         }
+        val bitmap = try {
+            context.assets.open("$ASSET_DIR/$file").use { stream ->
+                BitmapFactory.decodeStream(stream)
+            } ?: throw IllegalStateException("PNG could not be decoded: $file")
+        } catch (error: Exception) {
+            throw IllegalStateException("Required character PNG is missing or invalid: $file", error)
+        }
+        if (!bitmap.hasAlpha()) {
+            bitmap.recycle()
+            throw IllegalStateException("Character PNG must have an alpha channel: $file")
+        }
+        bitmaps[file] = bitmap
+        return bitmap
     }
 
     @Synchronized fun clearForTests() {
