@@ -48,7 +48,7 @@ SUPPORTED_BONES = {
 # differs from the legacy source bucket.
 def get_kotlin_slot(part):
     pid = part["id"]
-    if pid.startswith("forearm_skin_"):
+    if pid.startswith("hand_"):
         return "HAND_L" if pid.endswith("_L") else "HAND_R"
     key = (part["slot"], part["bone"])
     try:
@@ -72,8 +72,8 @@ DEFAULT_PARTS = {
     "SLEEVE_R": "shirt_tee_sleeve_R",
     "FOREARM_L": "forearm_skin_open_L",
     "FOREARM_R": "forearm_skin_open_R",
-    "HAND_L": "forearm_skin_open_L",
-    "HAND_R": "forearm_skin_open_R",
+    "HAND_L": "hand_open_L",
+    "HAND_R": "hand_open_R",
     "THIGH_L": "thigh_jeans_L",
     "THIGH_R": "thigh_jeans_R",
     "SHIN_L": "shin_jeans_L",
