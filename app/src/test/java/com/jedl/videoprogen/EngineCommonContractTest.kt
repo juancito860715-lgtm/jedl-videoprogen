@@ -88,4 +88,26 @@ class EngineCommonContractTest {
         assertFalse(runCatching { SceneTimebase(30, 0L) }.isSuccess)
         assertFalse(runCatching { SceneTimebase(61, 1_000L) }.isSuccess)
     }
+
+    @Test
+    fun partialFinalFrameEndSentinelMatchesExactSceneDuration() {
+        val clock = SceneTimebase(framesPerSecond = 24, durationMillis = 1_001L)
+
+        assertEquals(1_000_000L, clock.presentationTimeUs(24L))
+        assertEquals(1_001_000L, clock.presentationTimeUs(clock.frameCount))
+        assertEquals(24L, clock.frameIndexAt(1_000_999L))
+        assertEquals(clock.frameCount, clock.frameIndexAt(clock.durationUs))
+    }
+
+    @Test
+    fun optionalResourceDimensionsMustBeSpecifiedAsAPair() {
+        val incompleteAudio = EngineResourceManifest(
+            id = "voice_intro",
+            kind = EngineResourceKind.AUDIO,
+            path = "assets/audio/intro.wav",
+            width = 320
+        )
+
+        assertTrue(EngineResourceManifest.validate(incompleteAudio) != null)
+    }
 }
