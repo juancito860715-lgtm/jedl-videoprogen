@@ -66,7 +66,7 @@ jobs:
       - name: Generate real avatar PNG bank
         run: |
           python3 -m pip install --disable-pip-version-check matplotlib numpy
-          python3 tools/avatar_bank/build.py
+          python3 -m unittest discover -s tools/avatar_bank -p 'test_*.py' -v
           DEST="app/src/main/assets/characters/jedl_master_v1"
           mkdir -p "$DEST/png"
           cp tools/avatar_bank/out/png/*.png "$DEST/png/"
