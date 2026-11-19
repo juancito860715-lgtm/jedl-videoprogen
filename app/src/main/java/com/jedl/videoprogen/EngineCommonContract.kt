@@ -24,45 +24,83 @@ data class EngineResourceManifest(
     val pivot: NormalizedPivot? = null,
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION
 ) {
-    fun toJson(): String = JSONObject().apply {
-        put("schemaVersion", schemaVersion)
-        put("id", id)
-        put("kind", kind.name)
-        put("path", path)
-        if (width != null) put("width", width)
-        if (height != null) put("height", height)
-        if (pivot != null) put("pivot", JSONObject().apply {
-            put("x", pivot.x.toDouble())
-            put("y", pivot.y.toDouble())
-        })
-    }.toString(2)
+    fun toJson(): String {
+        val validationError = EngineResourceManifest.validate(this)
+        require(validationError == null) { validationError ?: "Manifiesto no válido" }
+        return JSONObject().apply {
+            put("schemaVersion", schemaVersion)
+            put("id", id)
+            put("kind", kind.name)
+            put("path", path)
+            if (width != null) put("width", width)
+            if (height != null) put("height", height)
+            if (pivot != null) put("pivot", JSONObject().apply {
+                put("x", pivot.x.toDouble())
+                put("y", pivot.y.toDouble())
+            })
+        }.toString(2)
+    }
 
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1
         private val SAFE_RESOURCE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
         private const val MAX_DIMENSION = 8192
 
+        private fun requiredString(json: JSONObject, key: String): String {
+            val value = json.get(key)
+            return value as? String
+                ?: throw IllegalArgumentException("El campo $key debe ser texto")
+        }
+
+        private fun requiredNumber(json: JSONObject, key: String): Double {
+            val value = json.get(key)
+            require(value is Number) { "El campo $key debe ser numérico" }
+            val number = value.toDouble()
+            require(number.isFinite()) { "El campo $key debe ser finito" }
+            return number
+        }
+
+        private fun requiredInt(json: JSONObject, key: String): Int {
+            val number = requiredNumber(json, key)
+            require(
+                number % 1.0 == 0.0 &&
+                    number >= Int.MIN_VALUE.toDouble() &&
+                    number <= Int.MAX_VALUE.toDouble()
+            ) { "El campo $key debe ser un entero válido" }
+            return number.toInt()
+        }
+
+        private fun optionalInt(json: JSONObject, key: String): Int? =
+            if (!json.has(key) || json.isNull(key)) null else requiredInt(json, key)
+
         /** Parse only known declarative fields; unknown resource kinds fail closed. */
         fun fromJson(source: String): EngineResourceManifest {
             require(source.length <= 64 * 1024) { "Manifiesto demasiado grande" }
             val json = JSONObject(source)
-            val version = json.getInt("schemaVersion")
+            val version = requiredInt(json, "schemaVersion")
             require(version == CURRENT_SCHEMA_VERSION) { "Versión de manifiesto no compatible" }
             val kind = try {
-                EngineResourceKind.valueOf(json.getString("kind"))
+                EngineResourceKind.valueOf(requiredString(json, "kind"))
             } catch (_: IllegalArgumentException) {
                 throw IllegalArgumentException("Tipo de recurso desconocido")
             }
-            val pivotJson = json.optJSONObject("pivot")
+            val pivot = if (!json.has("pivot") || json.isNull("pivot")) {
+                null
+            } else {
+                val pivotObject = json.get("pivot") as? JSONObject
+                    ?: throw IllegalArgumentException("El pivote debe ser un objeto")
+                NormalizedPivot(
+                    requiredNumber(pivotObject, "x").toFloat(),
+                    requiredNumber(pivotObject, "y").toFloat()
+                )
+            }
             val manifest = EngineResourceManifest(
-                id = json.getString("id"),
+                id = requiredString(json, "id"),
                 kind = kind,
-                path = json.getString("path"),
-                width = if (json.has("width") && !json.isNull("width")) json.getInt("width") else null,
-                height = if (json.has("height") && !json.isNull("height")) json.getInt("height") else null,
-                pivot = pivotJson?.let {
-                    NormalizedPivot(it.getDouble("x").toFloat(), it.getDouble("y").toFloat())
-                },
+                path = requiredString(json, "path"),
+                width = optionalInt(json, "width"),
+                height = optionalInt(json, "height"),
+                pivot = pivot,
                 schemaVersion = version
             )
             val error = validate(manifest)
