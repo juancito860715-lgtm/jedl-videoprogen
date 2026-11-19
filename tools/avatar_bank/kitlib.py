@@ -77,6 +77,13 @@ def bbox(shapes, margin=0.012):
 
 def render_piece(shapes, joint, png_path):
     x0, y0, x1, y1 = bbox(shapes)
+    # Include the rig joint in the raster bounds so every manifest pivot is
+    # normalized and the bitmap remains correctly positioned relative to bone.
+    joint_margin = 0.012
+    x0 = min(x0, joint[0]-joint_margin)
+    y0 = min(y0, joint[1]-joint_margin)
+    x1 = max(x1, joint[0]+joint_margin)
+    y1 = max(y1, joint[1]+joint_margin)
     width = max(1, int(math.ceil((x1-x0)*S)))
     height = max(1, int(math.ceil((y1-y0)*S)))
     fig = plt.figure(figsize=(width/100, height/100), dpi=100)
