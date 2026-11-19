@@ -76,6 +76,7 @@ class EngineCommonContractTest {
         assertEquals(33_333L, clock.presentationTimeUs(1L))
         assertEquals(15_000_000L, clock.presentationTimeUs(450L))
         assertEquals(30L, clock.frameIndexAt(1_000_000L))
+        assertEquals(clock.frameCount, clock.frameIndexAt(Long.MAX_VALUE))
     }
 
     @Test

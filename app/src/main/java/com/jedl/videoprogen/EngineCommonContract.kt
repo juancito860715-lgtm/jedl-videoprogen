@@ -87,7 +87,8 @@ data class EngineResourceManifest(
                     return "Dimensiones del recurso fuera de rango"
                 }
             } else if (manifest.width != null || manifest.height != null) {
-                if (manifest.width !in 1..MAX_DIMENSION || manifest.height !in 1..MAX_DIMENSION) {
+                if (manifest.width?.let { it !in 1..MAX_DIMENSION } == true ||
+                    manifest.height?.let { it !in 1..MAX_DIMENSION } == true) {
                     return "Dimensiones opcionales no válidas"
                 }
             }
@@ -130,6 +131,10 @@ class SceneTimebase(
     /** Frame containing the given timestamp, clamped to the scene's frame range. */
     fun frameIndexAt(timeUs: Long): Long {
         require(timeUs >= 0L) { "El tiempo no puede ser negativo" }
-        return ((timeUs * framesPerSecond) / 1_000_000L).coerceIn(0L, frameCount)
+        if (timeUs >= durationUs) return frameCount
+        val wholeSeconds = timeUs / 1_000_000L
+        val remainingMicros = timeUs % 1_000_000L
+        return (wholeSeconds * framesPerSecond + remainingMicros * framesPerSecond / 1_000_000L)
+            .coerceIn(0L, frameCount)
     }
 }
