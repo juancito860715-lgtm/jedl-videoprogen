@@ -14,7 +14,7 @@ def S_(d, fill="#ffffff", ink=True, lw=1.0, z=0, alpha=1.0):
     return dict(d=d, fill=fill, ink=ink, lw=lw, z=z, alpha=alpha)
 
 def parse(d):
-    toks = re.findall(r"[MLCQZ]|-?\\d*\\.?\\d+(?:e-?\\d+)?", d)
+    toks = re.findall(r"[MLCQZ]|-?\d*\\.?\d+(?:e-?\d+)?", d)
     i = 0
     cmd = None
     verts, codes, start = [], [], None
@@ -49,7 +49,7 @@ def parse(d):
     return verts, codes
 
 def mirror_d(d):
-    toks = re.findall(r"[MLCQZ]|-?\\d*\\.?\\d+(?:e-?\\d+)?", d)
+    toks = re.findall(r"[MLCQZ]|-?\d*\\.?\d+(?:e-?\d+)?", d)
     result, coordinate_index = [], 0
     for token in toks:
         if token in ("M", "L", "C", "Q", "Z"):
