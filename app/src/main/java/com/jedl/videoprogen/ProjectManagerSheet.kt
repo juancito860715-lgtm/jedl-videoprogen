@@ -107,6 +107,46 @@ fun ProjectManagerSheet(
                         layerText = ""
                     }
                 }, modifier = Modifier.fillMaxWidth()) { Text("Añadir capa de texto") }
+
+                Button(onClick = {
+                    val scene = currentProject.scenes.first()
+                    val characterCount = scene.layers.count { it.type == LayerType.CHARACTER }
+                    val preset = Avatars.presets()[characterCount % Avatars.presets().size]
+                    val positions = listOf(0.5f, 0.72f, 0.28f, 0.84f, 0.16f)
+                    val actorX = positions[characterCount % positions.size]
+                    val actorY = 0.55f
+                    val characterScale = if (characterCount == 0) 1f else 0.72f
+                    val character = LayerDocument(
+                        name = "Personaje ${characterCount + 1}",
+                        type = LayerType.CHARACTER,
+                        characterAppearance = CharacterAppearanceDocument(
+                            name = preset.name,
+                            skin = preset.skin,
+                            hair = preset.hair,
+                            hairStyle = preset.hairStyle,
+                            shirt = preset.shirt,
+                            pants = preset.pants,
+                            shoes = preset.shoes,
+                            beard = preset.beard,
+                            enabled = true,
+                            actorX = actorX,
+                            actorY = actorY
+                        ),
+                        transform = Transform2D(
+                            x = actorX,
+                            y = actorY,
+                            scaleX = characterScale,
+                            scaleY = characterScale
+                        ),
+                        zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                    )
+                    val changed = currentProject.copy(
+                        modifiedAtMillis = System.currentTimeMillis(),
+                        scenes = listOf(scene.copy(layers = scene.layers + character)) + currentProject.scenes.drop(1)
+                    )
+                    onChange(changed)
+                    error = ""
+                }, modifier = Modifier.fillMaxWidth()) { Text("Añadir personaje independiente") }
             }
 
             if (error.isNotBlank()) Text(error, color = Color(0xFFFF8A80))

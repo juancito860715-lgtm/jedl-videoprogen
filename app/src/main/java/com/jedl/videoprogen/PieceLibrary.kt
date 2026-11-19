@@ -46,6 +46,25 @@ object PieceLibrary {
 
     fun hasBitmapPieces(): Boolean = manifest != null
 
+    /** Estado de inicialización real; no fuerza la carga de recursos. */
+    fun isInitialized(): Boolean = appContext != null
+
+    /** Comprueba presencia de los archivos declarados sin decodificar bitmaps. */
+    fun declaredPngFilesAvailable(): Boolean {
+        val ctx = appContext ?: return false
+        val man = manifest ?: return false
+        if (man.pieces.isEmpty()) return false
+        return man.pieces.all { def ->
+            try {
+                ctx.assets.open(man.baseDir + "/" + def.file).use { true }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    fun declaredPieceCount(): Int = manifest?.pieces?.size ?: 0
+
     fun manifest(): PieceManifest? = manifest
 
     fun piece(bone: String): PieceDef? =

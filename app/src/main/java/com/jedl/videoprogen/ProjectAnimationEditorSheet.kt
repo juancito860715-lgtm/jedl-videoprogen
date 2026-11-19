@@ -38,11 +38,14 @@ fun ProjectAnimationEditorSheet(
     onDismiss: () -> Unit
 ) {
     val scene = project.scenes.first()
+    val characterLayers = scene.layers.filter { it.type == LayerType.CHARACTER }
+    val initialClip = scene.animationClips.firstOrNull { it.id == initialSelectedClipId }
+        ?: scene.animationClips.firstOrNull()
     var selectedClipId by remember(project.id, initialSelectedClipId) {
-        mutableStateOf(
-            scene.animationClips.firstOrNull { it.id == initialSelectedClipId }?.id
-                ?: scene.animationClips.firstOrNull()?.id.orEmpty()
-        )
+        mutableStateOf(initialClip?.id.orEmpty())
+    }
+    var selectedTargetLayerId by remember(project.id, initialSelectedClipId) {
+        mutableStateOf(initialClip?.targetLayerId ?: characterLayers.firstOrNull()?.id.orEmpty())
     }
     var selectedTime by remember(project.id) { mutableStateOf(0L) }
     var timeText by remember(project.id) { mutableStateOf("0") }
@@ -50,7 +53,6 @@ fun ProjectAnimationEditorSheet(
     var angleText by remember(project.id) { mutableStateOf("0") }
     var error by remember(project.id) { mutableStateOf("") }
     val selectedClip = scene.animationClips.firstOrNull { it.id == selectedClipId }
-    val selectedFrame = selectedClip?.keyframes?.firstOrNull { it.timeMillis == selectedTime }
 
     fun commitScene(updated: SceneDocument) {
         val saved = project.copy(scenes = listOf(updated) + project.scenes.drop(1))
@@ -68,44 +70,128 @@ fun ProjectAnimationEditorSheet(
         ) {
             Text("Editor de poses y keyframes", color = Color(0xFFF5B841), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Cada pose conserva los ángulos del rig. Los cambios se guardan en el proyecto.", color = Color(0xFFE7E8EE))
+
+            if (characterLayers.isNotEmpty()) {
+                Text("Personaje que vas a animar", color = Color(0xFFF5B841), fontWeight = FontWeight.SemiBold)
+                characterLayers.forEach { character ->
+                    val selected = character.id == selectedTargetLayerId
+                    Column(
+                        modifier = Modifier.fillMaxWidth().background(
+                            if (selected) Color(0xFF34302A) else Color(0xFF1B1D24),
+                            RoundedCornerShape(9.dp)
+                        ).clickable {
+                            selectedTargetLayerId = character.id
+                            val targetClip = scene.animationClips.firstOrNull { it.targetLayerId == character.id }
+                            selectedClipId = targetClip?.id.orEmpty()
+                            if (targetClip != null) {
+                                onSelectClip(targetClip.id)
+                                selectedTime = targetClip.keyframes.firstOrNull()?.timeMillis ?: 0L
+                                timeText = selectedTime.toString()
+                            } else {
+                                selectedTime = 0L
+                                timeText = "0"
+                            }
+                        }.padding(10.dp)
+                    ) {
+                        Text(character.name, color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (selected) "Seleccionado" else "Toca para seleccionar",
+                            color = Color(0xFFE7E8EE),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+
+            val targetCharacterId = selectedTargetLayerId.ifBlank { characterLayers.firstOrNull()?.id.orEmpty() }
+            val existingTargetClip = scene.animationClips.firstOrNull { it.targetLayerId == targetCharacterId }
             Button(onClick = {
-                val character = scene.layers.firstOrNull { it.type == LayerType.CHARACTER }
-                    ?: LayerDocument(name = "Personaje", type = LayerType.CHARACTER)
-                val layers = if (scene.layers.any { it.id == character.id }) scene.layers
-                    else scene.layers + character
-                val clip = AnimationClipDocument(
-                    name = "Animación " + (scene.animationClips.size + 1),
-                    targetLayerId = character.id,
-                    durationMillis = scene.durationMillis,
-                    keyframes = listOf(
-                        AnimationKeyframeDocument(0L, mapOf("torso" to 0f)),
-                        AnimationKeyframeDocument(scene.durationMillis, mapOf("torso" to 0f))
+                val character = characterLayers.firstOrNull { it.id == selectedTargetLayerId }
+                    ?: characterLayers.firstOrNull()
+                    ?: run {
+                        val preset = Avatars.presets().first()
+                        val x = 0.5f
+                        val y = 0.55f
+                        LayerDocument(
+                            name = "Personaje",
+                            type = LayerType.CHARACTER,
+                            characterAppearance = CharacterAppearanceDocument(
+                                name = preset.name,
+                                skin = preset.skin,
+                                hair = preset.hair,
+                                hairStyle = preset.hairStyle,
+                                shirt = preset.shirt,
+                                pants = preset.pants,
+                                shoes = preset.shoes,
+                                beard = preset.beard,
+                                enabled = true,
+                                actorX = x,
+                                actorY = y
+                            ),
+                            transform = Transform2D(x = x, y = y),
+                            zIndex = (scene.layers.maxOfOrNull { it.zIndex } ?: -1) + 1
+                        )
+                    }
+                val existingClip = scene.animationClips.firstOrNull { it.targetLayerId == character.id }
+                if (existingClip != null) {
+                    selectedTargetLayerId = character.id
+                    selectedClipId = existingClip.id
+                    onSelectClip(existingClip.id)
+                    selectedTime = existingClip.keyframes.firstOrNull()?.timeMillis ?: 0L
+                    timeText = selectedTime.toString()
+                } else {
+                    val layers = if (scene.layers.any { it.id == character.id }) scene.layers
+                        else scene.layers + character
+                    val clip = AnimationClipDocument(
+                        name = "Animación " + (scene.animationClips.size + 1),
+                        targetLayerId = character.id,
+                        durationMillis = scene.durationMillis,
+                        keyframes = listOf(
+                            AnimationKeyframeDocument(0L, mapOf("torso" to 0f)),
+                            AnimationKeyframeDocument(scene.durationMillis, mapOf("torso" to 0f))
+                        )
                     )
-                )
-                commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
-                selectedClipId = clip.id
-                onSelectClip(clip.id)
-                selectedTime = 0L
-                timeText = "0"
-            }, modifier = Modifier.fillMaxWidth()) { Text("Crear animación para el personaje") }
+                    commitScene(scene.copy(layers = layers, animationClips = scene.animationClips + clip))
+                    selectedTargetLayerId = character.id
+                    selectedClipId = clip.id
+                    onSelectClip(clip.id)
+                    selectedTime = 0L
+                    timeText = "0"
+                }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (existingTargetClip != null) "Seleccionar animación guardada" else "Crear animación para el personaje seleccionado")
+            }
 
             if (scene.animationClips.isEmpty()) {
                 Text("Todavía no hay clips de animación guardados.", color = Color(0xFFE7E8EE))
+            } else {
+                Text(
+                    "Por ahora se reproduce un clip por personaje. La secuencia de varios clips se incorporará al timeline.",
+                    color = Color(0xFFE7E8EE),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
             scene.animationClips.forEach { clip ->
+                val targetName = scene.layers.firstOrNull { it.id == clip.targetLayerId }?.name ?: "Personaje"
+                val activeForCharacter = scene.animationClips.firstOrNull { it.targetLayerId == clip.targetLayerId }?.id == clip.id
                 Column(
                     modifier = Modifier.fillMaxWidth().background(
                         if (clip.id == selectedClipId) Color(0xFF34302A) else Color(0xFF1B1D24),
                         RoundedCornerShape(9.dp)
                     ).clickable {
                         selectedClipId = clip.id
+                        selectedTargetLayerId = clip.targetLayerId
                         onSelectClip(clip.id)
                         selectedTime = clip.keyframes.firstOrNull()?.timeMillis ?: 0L
                         timeText = selectedTime.toString()
                     }.padding(10.dp)
                 ) {
                     Text(clip.name, color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text("${clip.keyframes.size} poses · ${clip.durationMillis} ms", color = Color(0xFFE7E8EE))
+                    Text(
+                        if (activeForCharacter) "${targetName} · clip activo · ${clip.keyframes.size} poses"
+                        else "${targetName} · clip adicional guardado",
+                        color = Color(0xFFE7E8EE)
+                    )
                 }
             }
 
