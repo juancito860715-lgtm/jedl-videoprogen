@@ -80,16 +80,18 @@ data class EngineResourceManifest(
                 EngineResourceKind.VECTOR_OBJECT,
                 EngineResourceKind.CHARACTER
             )
-            if (requiresDimensions) {
-                val width = manifest.width ?: return "Falta el ancho del recurso"
-                val height = manifest.height ?: return "Falta el alto del recurso"
+            val hasWidth = manifest.width != null
+            val hasHeight = manifest.height != null
+            if (hasWidth != hasHeight) return "Ancho y alto deben especificarse juntos"
+
+            if (requiresDimensions && !hasWidth) {
+                return "Faltan las dimensiones del recurso"
+            }
+            if (hasWidth) {
+                val width = manifest.width!!
+                val height = manifest.height!!
                 if (width !in 1..MAX_DIMENSION || height !in 1..MAX_DIMENSION) {
                     return "Dimensiones del recurso fuera de rango"
-                }
-            } else if (manifest.width != null || manifest.height != null) {
-                if (manifest.width?.let { it !in 1..MAX_DIMENSION } == true ||
-                    manifest.height?.let { it !in 1..MAX_DIMENSION } == true) {
-                    return "Dimensiones opcionales no válidas"
                 }
             }
 
@@ -125,6 +127,8 @@ class SceneTimebase(
     /** Presentation timestamp in microseconds for a frame or the end sentinel. */
     fun presentationTimeUs(frameIndex: Long): Long {
         require(frameIndex in 0L..frameCount) { "Índice de fotograma fuera de rango" }
+        // The sentinel marks the exact scene boundary, including a partial last frame.
+        if (frameIndex == frameCount) return durationUs
         return frameIndex * 1_000_000L / framesPerSecond
     }
 
