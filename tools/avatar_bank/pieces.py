@@ -91,7 +91,7 @@ add("hat_cap_brim","hat_brim","head","hat_brim",42,[S_("M 0.040 -0.430 C 0.072 -
 
 for side,sg in (("L",-1),("R",1)):
     for kind in ("open","fist"):
-        add(f"forearm_skin_{kind}_{side}","hand",f"foreArm{side}","skin",11 if side=="R" else 51,hand(kind,sg*0.10),variant=kind)
+        add(f"hand_{kind}_{side}","hand",f"foreArm{side}","skin",11 if side=="R" else 51,hand(kind,sg*0.10),variant=kind)
 
 for side,sg in (("L",-1),("R",1)):
     ax_=sg*0.07
