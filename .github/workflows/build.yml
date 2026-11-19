@@ -63,6 +63,16 @@ jobs:
           else
             echo "face_landmarker.task: ${FZ} bytes"
           fi
+      - name: Generate real avatar PNG bank
+        run: |
+          python3 -m pip install --disable-pip-version-check matplotlib numpy
+          python3 tools/avatar_bank/build.py
+          DEST="app/src/main/assets/characters/jedl_master_v1"
+          mkdir -p "$DEST/png"
+          cp tools/avatar_bank/out/png/*.png "$DEST/png/"
+          cp tools/avatar_bank/out/manifest.json "$DEST/manifest.json"
+          test -s "$DEST/manifest.json"
+          test "$(find "$DEST/png" -maxdepth 1 -name '*.png' | wc -l)" -eq "$(python3 -c 'import json; print(len(json.load(open("tools/avatar_bank/out/manifest.json"))["parts"]))')"
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Run tests and build debug APK
