@@ -89,7 +89,6 @@ class EngineCommonContractTest {
         assertFalse(runCatching { SceneTimebase(61, 1_000L) }.isSuccess)
     }
 
-
     @Test
     fun parserRejectsCoercibleButIncorrectJsonTypes() {
         val wrongSchemaType = """{"schemaVersion":"1","id":"asset_1","kind":"IMAGE","path":"assets/a.png","width":64,"height":64}"""
@@ -135,5 +134,14 @@ class EngineCommonContractTest {
         )
 
         assertTrue(EngineResourceManifest.validate(incompleteAudio) != null)
+    }
+
+    @Test
+    fun normalizedProgressUsesTimestampForPartialFinalFrame() {
+        val clock = SceneTimebase(framesPerSecond = 24, durationMillis = 1_001L)
+
+        assertEquals(0f, clock.normalizedProgressAt(0L), 0f)
+        assertEquals((1_000_000.0 / 1_001_000.0).toFloat(), clock.normalizedProgressAt(24L), 0.000001f)
+        assertEquals(1f, clock.normalizedProgressAt(clock.frameCount), 0f)
     }
 }

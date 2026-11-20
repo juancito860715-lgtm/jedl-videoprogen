@@ -85,7 +85,9 @@ class ExportService : Service() {
         try {
             val tempFile = File(cacheDir, "temp_export.mp4")
             val sceneDuration = (pendingProjectScene?.durationMillis ?: 5_000L).coerceAtLeast(1L)
-            val exporter = Mp4Exporter(pendingWidth, pendingHeight, pendingFrameRate, sceneDuration / 1_000f)
+            // Pass the persisted millisecond duration directly; avoid Float seconds
+            // rounding before the deterministic SceneTimebase creates frame PTS.
+            val exporter = Mp4Exporter(pendingWidth, pendingHeight, pendingFrameRate, sceneDuration)
             val projectId = pendingProjectId
             val assetStore = projectId?.let { ProjectAssetStore(this) }
             val imageCache = object : LruCache<String, Bitmap>(24 * 1024) {
@@ -222,28 +224,28 @@ class ExportService : Service() {
                 exportInProgress = true
             }
             try {
-            pendingPhoto = photo
-            pendingBackground = background
-            pendingMesh = mesh
-            pendingText = text
-            pendingTemplate = template
-            pendingWidth = width
-            pendingHeight = height
-            pendingTextX = textX
-            pendingTextY = textY
-            pendingTextSize = textSize
-            pendingActorX = actorX
-            pendingActorY = actorY
-            pendingAvatarMode = avatarMode
-            pendingAvatarSpec = avatarSpec
-            pendingAvatarFace = avatarFace
-            pendingDirection = direction
-            pendingProjectScene = projectScene
-            pendingProjectId = projectId
-            pendingFrameRate = frameRate.coerceIn(1, 60)
-            val intent = Intent(context, ExportService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
-            else context.startService(intent)
+                pendingPhoto = photo
+                pendingBackground = background
+                pendingMesh = mesh
+                pendingText = text
+                pendingTemplate = template
+                pendingWidth = width
+                pendingHeight = height
+                pendingTextX = textX
+                pendingTextY = textY
+                pendingTextSize = textSize
+                pendingActorX = actorX
+                pendingActorY = actorY
+                pendingAvatarMode = avatarMode
+                pendingAvatarSpec = avatarSpec
+                pendingAvatarFace = avatarFace
+                pendingDirection = direction
+                pendingProjectScene = projectScene
+                pendingProjectId = projectId
+                pendingFrameRate = frameRate.coerceIn(1, 60)
+                val intent = Intent(context, ExportService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+                else context.startService(intent)
             } catch (error: Exception) {
                 synchronized(exportLock) { exportInProgress = false }
                 throw error
