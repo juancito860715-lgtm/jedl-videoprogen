@@ -170,6 +170,18 @@ class SceneTimebase(
         return frameIndex * 1_000_000L / framesPerSecond
     }
 
+    /**
+     * Normalized scene position for rendering the given frame.
+     * Uses its presentation timestamp, not frameIndex / frameCount, so a
+     * partial final frame is rendered near the actual end of the scene.
+     */
+    fun normalizedProgressAt(frameIndex: Long): Float {
+        val timestampUs = presentationTimeUs(frameIndex)
+        return (timestampUs.toDouble() / durationUs.toDouble())
+            .coerceIn(0.0, 1.0)
+            .toFloat()
+    }
+
     /** Frame containing the given timestamp, clamped to the scene's frame range. */
     fun frameIndexAt(timeUs: Long): Long {
         require(timeUs >= 0L) { "El tiempo no puede ser negativo" }
