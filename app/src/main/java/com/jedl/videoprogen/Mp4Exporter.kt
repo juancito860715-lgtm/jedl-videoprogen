@@ -107,7 +107,7 @@ class Mp4Exporter(
             }
 
             val eosInputIndex = awaitInputBuffer(
-                encoder,
+                activeEncoder,
                 activeMuxer,
                 muxerState,
                 bufferInfo
