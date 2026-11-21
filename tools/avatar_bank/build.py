@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build deterministic transparent PNG pieces and the Android layer manifest."""
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -102,9 +103,13 @@ def build():
         pivot_y = (J[bone][1]-y0)/height_units
         if not (0.0 <= pivot_x <= 1.0 and 0.0 <= pivot_y <= 1.0):
             raise ValueError(f"Pivot outside normalized image bounds for {part_id}")
+        png_path = PNG_DIR / png_name
         item = {
             "id": part_id, "slot": slot, "boneId": bone,
             "file": f"{ASSET_REL}/{png_name}",
+            "source": "tools/avatar_bank/pieces.py",
+            "sha256": hashlib.sha256(png_path.read_bytes()).hexdigest(),
+            "byteSize": png_path.stat().st_size,
             "pivotX": round(pivot_x, 6), "pivotY": round(pivot_y, 6),
             "widthUnits": round(width_units, 6),
             "heightUnits": round(height_units, 6),
@@ -123,7 +128,18 @@ def build():
             raise ValueError(f"Default slot mismatch: {slot} -> {part_id} ({by_id[part_id]['slot']})")
         defaults[slot] = part_id
 
-    manifest = {"id": "jedl_master_v1", "version": 1, "parts": parts, "defaults": defaults}
+    manifest = {
+        "id": "jedl_master_v1",
+        "version": 1,
+        "generatedFrom": "tools/avatar_bank/pieces.py",
+        "licenseAudit": {
+            "status": "UNDECLARED",
+            "thirdPartyAssets": [],
+            "note": "The repository has no LICENSE file. The bank is procedurally generated from repository source; commercial redistribution rights are not certified until the project license is declared."
+        },
+        "parts": parts,
+        "defaults": defaults
+    }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

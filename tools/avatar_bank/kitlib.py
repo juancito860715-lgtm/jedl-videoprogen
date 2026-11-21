@@ -13,37 +13,75 @@ INK_W = 0.0105
 def S_(d, fill="#ffffff", ink=True, lw=1.0, z=0, alpha=1.0):
     return dict(d=d, fill=fill, ink=ink, lw=lw, z=z, alpha=alpha)
 
+_TOKEN_RE = re.compile(r"[MLCQZ]|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
+_COMMANDS = {"M", "L", "C", "Q", "Z"}
+
+def _tokenize_path(data):
+    tokens = []
+    position = 0
+    for match in _TOKEN_RE.finditer(data):
+        separator = data[position:match.start()]
+        if separator.strip(" \t\r\n,"):
+            raise ValueError(f"Invalid SVG path token near: {separator!r}")
+        tokens.append(match.group(0))
+        position = match.end()
+    if data[position:].strip(" \t\r\n,"):
+        raise ValueError(f"Invalid SVG path token near: {data[position:]!r}")
+    if not tokens:
+        raise ValueError("Empty vector path")
+    return tokens
+
 def parse(d):
-    toks = re.findall(r"[MLCQZ]|-?\d*\.?\d+(?:e-?\d+)?", d)
+    """Parse the absolute SVG M/L/C/Q/Z subset used by the avatar bank."""
+    toks = _tokenize_path(d)
     i = 0
     cmd = None
     verts, codes, start = [], [], None
-    def num():
+
+    def number():
         nonlocal i
+        if i >= len(toks) or toks[i] in _COMMANDS:
+            raise ValueError(f"Not enough coordinates for SVG command {cmd}")
         value = float(toks[i])
         i += 1
+        if not math.isfinite(value):
+            raise ValueError("SVG coordinates must be finite")
         return value
+
     while i < len(toks):
-        if toks[i] in ("M", "L", "C", "Q", "Z"):
+        if toks[i] in _COMMANDS:
             cmd = toks[i]
             i += 1
+        elif cmd is None:
+            raise ValueError(f"Expected SVG command, got {toks[i]!r}")
+
         if cmd == "M":
-            p = (num(), num())
-            verts.append(p); codes.append(Path.MOVETO); start = p; cmd = "L"
+            point = (number(), number())
+            verts.append(point)
+            codes.append(Path.MOVETO)
+            start = point
+            # SVG treats subsequent coordinate pairs after M as L.
+            cmd = "L"
         elif cmd == "L":
-            verts.append((num(), num())); codes.append(Path.LINETO)
+            verts.append((number(), number()))
+            codes.append(Path.LINETO)
         elif cmd == "C":
             for _ in range(3):
-                verts.append((num(), num())); codes.append(Path.CURVE4)
+                verts.append((number(), number()))
+                codes.append(Path.CURVE4)
         elif cmd == "Q":
             for _ in range(2):
-                verts.append((num(), num())); codes.append(Path.CURVE3)
+                verts.append((number(), number()))
+                codes.append(Path.CURVE3)
         elif cmd == "Z":
             if start is None:
                 raise ValueError("Path closes before it has a start point")
-            verts.append(start); codes.append(Path.CLOSEPOLY); cmd = None
+            verts.append(start)
+            codes.append(Path.CLOSEPOLY)
+            cmd = None
         else:
             raise ValueError(f"Unsupported SVG path command: {cmd}")
+
     if not verts:
         raise ValueError("Empty vector path")
     return verts, codes
