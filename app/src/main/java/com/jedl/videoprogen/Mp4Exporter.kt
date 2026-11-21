@@ -63,7 +63,7 @@ class Mp4Exporter(
         var encoder: MediaCodec? = null
         var encoderStarted = false
         var muxer: MediaMuxer? = null
-        var muxerStarted = false
+        val muxerState = MuxerState()
         var completed = false
 
         try {
@@ -76,7 +76,6 @@ class Mp4Exporter(
                 MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
             )
             muxer = activeMuxer
-            val muxerState = MuxerState()
             val bufferInfo = MediaCodec.BufferInfo()
             val argb = IntArray(width * height)
 
@@ -127,9 +126,9 @@ class Mp4Exporter(
 
             try {
                 activeMuxer.stop()
-                muxerStarted = false
+                muxerState.started = false
             } catch (error: Exception) {
-                muxerStarted = false
+                muxerState.started = false
                 throw IllegalStateException("No se pudo finalizar el archivo MP4", error)
             }
 
@@ -152,10 +151,12 @@ class Mp4Exporter(
             } catch (_: Exception) {
             }
 
-            if (muxerStarted) {
+            if (muxerState.started) {
                 try {
                     muxer?.stop()
                 } catch (_: Exception) {
+                } finally {
+                    muxerState.started = false
                 }
             }
             try {
@@ -246,17 +247,17 @@ class Mp4Exporter(
             FormatOption(
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible,
                 layout = null,
-                priority = 0
+                priority = 2
             ),
             FormatOption(
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar,
                 layout = Yuv420Layout.SEMIPLANAR_UV,
-                priority = 1
+                priority = 0
             ),
             FormatOption(
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar,
                 layout = Yuv420Layout.PLANAR_I420,
-                priority = 2
+                priority = 1
             )
         )
 
@@ -348,6 +349,8 @@ class Mp4Exporter(
                 0
             )
         } else {
+            val layout = started.candidate.layout
+                ?: throw IllegalStateException("Formato YUV420 directo no seleccionado")
             val inputBuffer = encoder.getInputBuffer(inputIndex)
                 ?: throw IllegalStateException("El codificador no entregó un buffer de entrada")
             inputBuffer.clear()
@@ -357,7 +360,7 @@ class Mp4Exporter(
                 height = height,
                 stride = started.stride,
                 sliceHeight = started.sliceHeight,
-                layout = started.candidate.layout,
+                layout = layout,
                 target = inputBuffer
             )
             encoder.queueInputBuffer(inputIndex, 0, size, presentationTimeUs, 0)
