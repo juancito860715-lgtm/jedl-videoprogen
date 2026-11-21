@@ -47,8 +47,8 @@ SUPPORTED_BONES = {
 }
 # A source part may override the general slot mapping when its semantic role
 # differs from the legacy source bucket.
-def get_kotlin_slot(part):
-    pid = part["id"]
+def get_kotlin_slot(part, part_id):
+    pid = part_id
     if pid.startswith("hand_"):
         return "HAND_L" if pid.endswith("_L") else "HAND_R"
     key = (part["slot"], part["bone"])
@@ -94,7 +94,7 @@ def build():
         bone = source["bone"]
         if bone not in SUPPORTED_BONES or bone not in J:
             raise ValueError(f"Unsupported rig bone for {part_id}: {bone}")
-        slot = get_kotlin_slot(source)
+        slot = get_kotlin_slot(source, part_id)
         png_name = f"{part_id}.png"
         metrics = render_piece(source["shapes"], J[bone], PNG_DIR / png_name)
         x0, y0, x1, y1 = metrics["bounds"]
