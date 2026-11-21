@@ -116,6 +116,7 @@ internal object Yuv420FrameConverter {
      * made for the Image-backed input buffer.
      */
     fun writeToImage(argb: IntArray, width: Int, height: Int, image: Image): Int {
+        val logicalSize = requiredBufferSize(width, height)
         require(image.format == ImageFormat.YUV_420_888) {
             "El codificador no entregó una imagen YUV_420_888"
         }
@@ -161,7 +162,7 @@ internal object Yuv420FrameConverter {
                 vPlane.put(cx, cy, chromaV(r, g, b))
             }
         }
-        return width * height * 3 / 2
+        return logicalSize
     }
 
     private class PlaneWriter(
