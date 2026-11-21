@@ -36,9 +36,9 @@ in the generator source.
 
 ## Scope and release gate
 
-- The project-wide LICENSE must identify the actual copyright holder and cover only
-  material that holder has authority to license.
-- No project-wide commercial-rights certification is made by this file.
+- The repository now includes LICENSE (Apache-2.0) and NOTICE identifying JEDL Studio
+  for original JEDL-authored material only, subject to the scope limitations in NOTICE.
+- This inventory is not a legal opinion or a blanket commercial-rights certification.
 - Before commercial distribution, complete a dependency/SBOM audit for all resolved
   transitive artifacts and retain upstream license/NOTICE files for bundled models.
 - SDK terms, model terms, trademarks, patents, privacy obligations, and rights in
