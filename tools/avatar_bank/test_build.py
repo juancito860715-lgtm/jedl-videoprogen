@@ -15,11 +15,11 @@ class AvatarBankBuildTest(unittest.TestCase):
         cls.output = HERE / "out"
 
     def test_exactly_forty_unique_png_parts_are_generated(self):
-        self.assertEqual(len(self.manifest["parts"]), 40)
+        self.assertEqual(len(self.manifest["parts"]), 42)
         ids = [part["id"] for part in self.manifest["parts"]]
         self.assertEqual(len(ids), len(set(ids)))
         pngs = list((self.output / "png").glob("*.png"))
-        self.assertEqual(len(pngs), 40)
+        self.assertEqual(len(pngs), 42)
 
     def test_manifest_slots_match_real_kotlin_enum(self):
         allowed = {
