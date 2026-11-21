@@ -68,7 +68,8 @@ class Mp4Exporter(
 
         try {
             val started = createStartedEncoder()
-            encoder = started.codec
+            val activeEncoder = started.codec
+            encoder = activeEncoder
             encoderStarted = true
 
             val activeMuxer = MediaMuxer(
@@ -89,19 +90,19 @@ class Mp4Exporter(
                 }
 
                 val inputIndex = awaitInputBuffer(
-                    encoder,
+                    activeEncoder,
                     activeMuxer,
                     muxerState,
                     bufferInfo
                 )
                 queueFrame(
-                    encoder = encoder,
+                    encoder = activeEncoder,
                     started = started,
                     inputIndex = inputIndex,
                     argb = argb,
                     presentationTimeUs = timebase.presentationTimeUs(frameIndex)
                 )
-                drainAvailableOutput(encoder, activeMuxer, muxerState, bufferInfo)
+                drainAvailableOutput(activeEncoder, activeMuxer, muxerState, bufferInfo)
                 onProgress(((frame + 1) * 99) / totalFrames)
             }
 
@@ -111,14 +112,14 @@ class Mp4Exporter(
                 muxerState,
                 bufferInfo
             )
-            encoder.queueInputBuffer(
+            activeEncoder.queueInputBuffer(
                 eosInputIndex,
                 0,
                 0,
                 timebase.durationUs,
                 MediaCodec.BUFFER_FLAG_END_OF_STREAM
             )
-            drainUntilEndOfStream(encoder, activeMuxer, muxerState, bufferInfo)
+            drainUntilEndOfStream(activeEncoder, activeMuxer, muxerState, bufferInfo)
 
             check(muxerState.started && muxerState.trackIndex >= 0) {
                 "El codificador no produjo un formato de salida H.264"
