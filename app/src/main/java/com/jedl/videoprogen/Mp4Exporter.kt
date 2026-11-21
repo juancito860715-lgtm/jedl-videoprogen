@@ -339,16 +339,16 @@ class Mp4Exporter(
                 require(inputCapacity >= logicalSize) {
                     "El buffer flexible del codificador es demasiado pequeño"
                 }
+                encoder.queueInputBuffer(
+                    inputIndex,
+                    0,
+                    inputCapacity,
+                    presentationTimeUs,
+                    0
+                )
             } finally {
                 image.close()
             }
-            encoder.queueInputBuffer(
-                inputIndex,
-                0,
-                inputCapacity,
-                presentationTimeUs,
-                0
-            )
         } else {
             val layout = started.candidate.layout
                 ?: throw IllegalStateException("Formato YUV420 directo no seleccionado")
