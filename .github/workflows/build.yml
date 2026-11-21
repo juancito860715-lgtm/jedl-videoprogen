@@ -11,6 +11,15 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test and validate offline asset catalog
+        run: |
+          python3 -m unittest discover -s tools/tests -v
+          python3 tools/asset_pack.py validate
+      - name: Download and verify approved offline asset packs
+        run: python3 tools/asset_pack.py download --output build/asset-packs
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -73,3 +82,12 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload verified offline asset packs
+        uses: actions/upload-artifact@v4
+        with:
+          name: jedl-offline-asset-packs
+          path: |
+            build/asset-packs/*.zip
+            build/asset-packs/*.license.json
+          if-no-files-found: ignore
