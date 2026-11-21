@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 import unittest
@@ -36,12 +37,22 @@ class AvatarBankBuildTest(unittest.TestCase):
             self.assertIn(slot, allowed)
             self.assertEqual(by_id[part_id]["slot"], slot)
 
+    def test_manifest_declares_asset_provenance_and_honest_license_status(self):
+        self.assertEqual(self.manifest["generatedFrom"], "tools/avatar_bank/pieces.py")
+        audit = self.manifest["licenseAudit"]
+        self.assertEqual(audit["status"], "UNDECLARED")
+        self.assertEqual(audit["thirdPartyAssets"], [])
+        self.assertIn("no LICENSE file", audit["note"])
+
     def test_every_png_path_pivot_and_bone_is_valid(self):
         for part in self.manifest["parts"]:
             with self.subTest(part=part["id"]):
                 path = self.output / part["file"]
                 self.assertTrue(path.is_file())
                 self.assertGreater(path.stat().st_size, 0)
+                self.assertEqual(part["byteSize"], path.stat().st_size)
+                self.assertEqual(part["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+                self.assertEqual(len(part["sha256"]), 64)
                 self.assertGreater(part["widthUnits"], 0)
                 self.assertGreater(part["heightUnits"], 0)
                 self.assertGreaterEqual(part["pivotX"], 0)
