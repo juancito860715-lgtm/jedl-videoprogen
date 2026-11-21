@@ -63,23 +63,32 @@ class BonePose(
 class Skeleton(val bones: List<Bone>) {
 
     fun solve(angles: Map<String, Float>, rootX: Float, rootY: Float): LinkedHashMap<String, BonePose> {
-        val out = LinkedHashMap<String, BonePose>()
-        for (b in bones) {
-            val parentPose = b.parent?.let { out[it] }
-            val m = Matrix()
-            var parentDeg = 0f
-            if (parentPose == null) {
-                m.setTranslate(rootX, rootY)
-            } else {
-                m.set(parentPose.matrix)
-                parentDeg = parentPose.worldDeg
+        val nodes = bones.map { bone ->
+            SkeletalBoneNode(
+                name = bone.name,
+                parent = bone.parent,
+                attachX = bone.attachX,
+                attachY = bone.attachY,
+                restDegrees = bone.restDeg,
+                animationDegrees = angles[bone.name] ?: 0f
+            )
+        }
+        val worldPoses = SkeletalHierarchySolver.solve(nodes, rootX, rootY)
+        val out = LinkedHashMap<String, BonePose>(bones.size)
+
+        for (bone in bones) {
+            val world = worldPoses.getValue(bone.name)
+            val matrix = Matrix().apply {
+                setValues(world.matrix.toAndroidMatrixValues())
             }
-            m.postTranslate(b.attachX, b.attachY)
-            val anim = angles[b.name] ?: 0f
-            m.postRotate(b.restDeg + anim)
-            val pts = floatArrayOf(0f, 0f, 0f, b.length)
-            m.mapPoints(pts)
-            out[b.name] = BonePose(PointF(pts[0], pts[1]), PointF(pts[2], pts[3]), parentDeg + b.restDeg + anim, m)
+            val joint = world.matrix.map(Vec2(0f, 0f))
+            val tip = world.matrix.map(Vec2(0f, bone.length))
+            out[bone.name] = BonePose(
+                PointF(joint.x, joint.y),
+                PointF(tip.x, tip.y),
+                world.worldDegrees,
+                matrix
+            )
         }
         return out
     }
@@ -376,7 +385,7 @@ object PuppetEngine {
         if (t <= 0f) return a
         val keys = a.angles.keys.toSet() + b.angles.keys
         val m = LinkedHashMap<String, Float>()
-        for (k in keys) m[k] = (a.angles[k] ?: 0f) * (1f - t) + (b.angles[k] ?: 0f) * t
+        for (k in keys) m[k] = SkeletalMath.lerpAngleDegrees(a.angles[k] ?: 0f, b.angles[k] ?: 0f, t)
         return Pose(m, a.bob * (1f - t) + b.bob * t, a.sway * (1f - t) + b.sway * t)
     }
 

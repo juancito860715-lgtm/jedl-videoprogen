@@ -63,13 +63,33 @@ jobs:
           else
             echo "face_landmarker.task: ${FZ} bytes"
           fi
+      - name: Generate real avatar PNG bank
+        run: |
+          python3 -m pip install --disable-pip-version-check matplotlib numpy
+          python3 -m unittest discover -s tools/avatar_bank -p 'test_*.py' -v
+          DEST="app/src/main/assets/characters/jedl_master_v1"
+          mkdir -p "$DEST/png"
+          cp tools/avatar_bank/out/png/*.png "$DEST/png/"
+          cp tools/avatar_bank/out/manifest.json "$DEST/manifest.json"
+          test -s "$DEST/manifest.json"
+          test "$(find "$DEST/png" -maxdepth 1 -name '*.png' | wc -l)" -eq "$(python3 -c 'import json; print(len(json.load(open("tools/avatar_bank/out/manifest.json"))["parts"]))')"
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.4
       - name: Run tests and build debug APK
         run: |
           ./gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
-      - name: Upload APK
+      - name: Verify avatar bank inside APK and write checksums
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          python3 tools/avatar_bank/verify_apk_assets.py "$APK" --output app/build/outputs/apk/debug/avatar-bank-verification.json
+          sha256sum "$APK" > app/build/outputs/apk/debug/app-debug.apk.sha256
+          cp app/src/main/assets/characters/jedl_master_v1/manifest.json app/build/outputs/apk/debug/avatar-bank-manifest.json
+      - name: Upload APK and audit evidence
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/app-debug.apk.sha256
+            app/build/outputs/apk/debug/avatar-bank-verification.json
+            app/build/outputs/apk/debug/avatar-bank-manifest.json
